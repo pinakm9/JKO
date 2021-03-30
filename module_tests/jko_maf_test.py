@@ -8,13 +8,12 @@ print(root)
 sys.path.insert(0, root + '/modules')
 sys.path.insert(0, root + '/custom_dists')
 # import required modules
-import jko_lstm as jko
+import jko_maf as jko
 import numpy as np
 import scipy.stats as ss
 import tensorflow as tf
 import jko_plotter as pltr
-import gaussian_circle as gc
-import vegas
+import gaussian_circle as gc 
 
 # set psi and beta
 def psi(x):
@@ -41,32 +40,21 @@ class CustomDensity(tf.keras.models.Model):
 real_density = CustomDensity()
 ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver = jko.JKOLSTM(30, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
+solver = jko.JKOMAF(dimension, 1, 10, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
 solver(ensemble)
 solver.summary()
 
-from vegasflow import VegasFlow
-n_calls = int(200)
-vegas_instance = VegasFlow(dimension, n_calls)
 
 class SolverDensity(tf.keras.models.Model):
     def __init__(self):
         super().__init__(dtype=dtype)
-        integ = vegas.Integrator(2.5*np.array([[-1.0, 1.0], [-1.0, 1.0]]))
-        def integrand(x, n_dim=None, weight=None):
-            #print(x, type(x))
-            y = solver(tf.convert_to_tensor([x], dtype=tf.float32)).numpy()[0][0]
-            #print(y)
-            return y
-        self.c = integ(integrand, nitn=10, neval=200).mean
-        
+     
     def call(self, x):
-        return solver(x) / self.c
-
-
-plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
-plotter.plot('images/lstm_before.png')
-solver.learn_unnormalized_density(ensemble, weights, epochs=350, initial_rate=0.001)
+        return solver.prob(x) #/ self.c
 solver_density = SolverDensity()
-plotter = pltr.JKOPlotter(funcs=[solver_density, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
-plotter.plot('images/lstm_after.png')
+
+plotter = pltr.JKOPlotter(funcs=[solver_density, real_density], space=3.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=25)
+plotter.plot('images/before_initial_training_n.png')
+solver.learn_density(ensemble, weights, epochs=5000, initial_rate=0.001)
+plotter = pltr.JKOPlotter(funcs=[solver_density, real_density], space=3.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=25)
+plotter.plot('images/after_initial_training_n.png')
