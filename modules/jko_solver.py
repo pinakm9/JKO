@@ -63,12 +63,6 @@ class JKOSolver(tf.keras.models.Model):
         Description:
             prepares for the next time step
         """
-        self.save_weights()
-        if self.current_time == 0:
-            self.sister = copy.deepcopy(self)
-        else:
-            self.sister.load_weights(time_id=self.current_time)
-        
         # update the clock
         self.current_time += 1
         # set the previous reference points
@@ -86,7 +80,7 @@ class JKOSolver(tf.keras.models.Model):
         hdf5_cost.close()
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
 
-    def update(self, epochs=10, initial_rate=1e-3):
+    def update(self, epochs=100, initial_rate=1e-3):
         """
         Description:
             trains the network to learn the solution at current time step
@@ -104,13 +98,36 @@ class JKOSolver(tf.keras.models.Model):
                 loss_E = self.loss_E(self.curr_ref_pts)
                 loss_S = self.loss_S(self.curr_ref_pts)
                 loss = loss_W + loss_E + loss_S
-                print('epoch = {}, Wasserstein-loss = {:.4f}, E-loss = {:4f}, S-loss = {:4f}'.format(epoch + 1, loss_W.numpy(), loss_E.numpy(), loss_S.numpy()))
+                print('epoch = {}, Wasserstein-loss = {:.4f}, E-loss = {:4f}, S-loss = {:4f}'.format(epoch + 1, loss_W, loss_E, loss_S))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
                     print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
+    def solve(self, final_time_id=None, epochs_per_step=100, initial_rate=1e-3):
+        """
+        Description:
+            solves the equation till a given number of time step
+        Args:
+            final_time_id: final time represented as an integer till which the equation is to be solved,
+                            should be less than whatever's available in the ensemble evolution file 
+            epochs_per_step: number of epochs to train per time step
+            initial_rate: initial learning rate
+        """
+        hdf5_ens = tables.open_file(self.ens_file, 'r')
+        self.final_available_time_id = len(list(hdf5_ens.walk_nodes("/", "Table"))) - 1
+        hdf5_ens.close()
+        if final_time_id is None:
+            final_time_id = self.final_available_time_id
+        else:
+            final_time_id = min(self.final_available_time_id, final_time_id)
+        self.learn_initial_condition(epochs=epochs_per_step, initial_rate=initial_rate)
+        self.save_weights()
+        for _ in range(final_time_id):
+            self.prepare()
+            self.update(epochs=epochs_per_step, initial_rate=initial_rate)
+            self.save_weights()
             
     def loss_E(self, x):
         """
@@ -152,11 +169,11 @@ class JKOSolver(tf.keras.models.Model):
         """
         hdf5_ens = tables.open_file(self.ens_file, 'r')
         pts = getattr(hdf5_ens.root, 'time_0').read().tolist()
+        weights = np.array(getattr(hdf5_ens.root, 'probs_0').read().tolist()).flatten()
         hdf5_ens.close()
         self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
-        self.prev_weights = tf.ones(len(pts), dtype=self.dtype) / len(pts)
-        cost = ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2)
-        self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
+        self.prev_weights = tf.convert_to_tensor(weights, dtype=self.dtype) / weights.sum()
+        self.curr_cost = tf.convert_to_tensor(ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2), dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
         print(True in tf.math.is_nan(tf.reshape(self.curr_cost, (-1,))))
         for epoch in range(epochs):
@@ -185,8 +202,7 @@ class JKOSolver(tf.keras.models.Model):
         weights /= tf.reduce_mean(weights) 
         self.curr_ref_pts = ensemble#tf.convert_to_tensor(ensemble, dtype=self.dtype)
         self.prev_weights = weights#tf.convert_to_tensor(weights, dtype=self.dtype)
-        cost = ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2)
-        self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
+        self.curr_cost = tf.convert_to_tensor(ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2), dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
         for epoch in range(epochs):
             with tf.GradientTape() as tape:

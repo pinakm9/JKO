@@ -32,7 +32,7 @@ def compute_cost_evolution(ens_file, save_path, p=2, dtype=np.float64):
     """
     hdf5_ens = tables.open_file(ens_file, 'r')
     hdf5_cost = tables.open_file(save_path, 'w')
-    steps = len(list(hdf5_ens.walk_nodes("/", "Table")))
+    steps = len(list(hdf5_ens.walk_nodes("/", "Table"))) - 1
     col_type = tables.Float64Col if dtype == np.float64 else tables.Float32Col
     for time_id in range(steps - 1):
         ensemble_1 = np.array(getattr(hdf5_ens.root, 'time_' + str(time_id)).read().tolist(), dtype=dtype)
