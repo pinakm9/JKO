@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import tables
 import wasserstein as ws
+import vegas
 
 class JKOSolver(tf.keras.models.Model):
     """
@@ -27,6 +28,7 @@ class JKOSolver(tf.keras.models.Model):
         self.sinkhorn_iters = sinkhorn_iters
         self.current_time = 0
         super().__init__(name=name, dtype=dtype)
+        self.normalizer = 1.0
 
     def prepare(self):
         """
@@ -112,6 +114,7 @@ class JKOSolver(tf.keras.models.Model):
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
             
 
+    #@tf.function
     def learn_unnormalized_density(self, ensemble, weights, epochs=10, initial_rate=1e-3):
         """
         Description:
@@ -126,14 +129,10 @@ class JKOSolver(tf.keras.models.Model):
         cost = ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2)
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        #print(self.curr_cost)
-        #print(self.curr_ref_pts)
-        #print(True in tf.math.is_nan(tf.reshape(self.curr_cost, (-1,))))
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
                 self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
-                #self.curr_weights /= tf.reduce_sum(self.curr_weights)
-                #print(self.curr_weights)
+                self.curr_weights /= tf.reduce_sum(self.curr_weights)
                 loss = ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
                                          epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
                 print('epoch = {}, Sinkhorn loss = {}'.format(epoch + 1, loss.numpy()))
@@ -174,3 +173,19 @@ class JKOSolver(tf.keras.models.Model):
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
+
+    def compute_normalizer(self, domain, nitn=10, neval=200):
+        """
+        Description:
+            calculates normalizing constant using Vegas algorithm
+
+        Args:
+            domain: box domain over which to compute the integral
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
+        """
+        integrator = vegas.Integrator(domain)
+        def integrand(x, n_dim=None, weight=None):
+            return self.call(tf.convert_to_tensor([x], dtype=self.dtype)).numpy()[0][0]
+        self.normalizer = integrator(integrand, nitn=nitn, neval=neval).mean
+        

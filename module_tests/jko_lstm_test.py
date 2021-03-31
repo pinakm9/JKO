@@ -45,9 +45,6 @@ solver = jko.JKOLSTM(30, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
 solver(ensemble)
 solver.summary()
 
-from vegasflow import VegasFlow
-n_calls = int(200)
-vegas_instance = VegasFlow(dimension, n_calls)
 
 class SolverDensity(tf.keras.models.Model):
     def __init__(self):
@@ -59,6 +56,7 @@ class SolverDensity(tf.keras.models.Model):
             #print(y)
             return y
         self.c = integ(integrand, nitn=10, neval=200).mean
+        print(self.c)
         
     def call(self, x):
         return solver(x) / self.c
@@ -67,6 +65,8 @@ class SolverDensity(tf.keras.models.Model):
 plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
 plotter.plot('images/lstm_before.png')
 solver.learn_unnormalized_density(ensemble, weights, epochs=350, initial_rate=0.001)
-solver_density = SolverDensity()
-plotter = pltr.JKOPlotter(funcs=[solver_density, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
+domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
+solver.compute_normalizer(domain)
+#SolverDensity()
+plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
 plotter.plot('images/lstm_after.png')

@@ -1,7 +1,7 @@
 #import tensorflow as tf
 import numpy as np
 import scipy.stats as ss
-import tensorflow_probability as tfp
+#import tensorflow_probability as tfp
 
 def polar_2(nn, ensemble):
     #transform the ensemble into polar coordinates
@@ -12,16 +12,23 @@ def polar_2(nn, ensemble):
 
 
 def quad_2(func, ensemble):
-   return  2.0 * np.pi * np.mean(func(ensemble) * (1.0 + ensemble[:, 0]**2) * (1.0 + ensemble[:, 1]**2))
+   return  np.pi**2 * (func(ensemble) * (1.0 + ensemble[:, 0]**2) * (1.0 + ensemble[:, 1]**2)).sum() / len(ensemble)
 
+def quad_3(func, ensemble):
+    x = ensemble[:, 0]
+    y = ensemble[:, 1]
+
+    r = np.sqrt(x**2 + y**2)
+
+    return 0.25 * np.pi**3 * (func(ensemble) * r *  (1 + r**2)).sum() / len(ensemble) 
 
 dim = 2
 mean = np.zeros(dim)
 cov = np.identity(dim)
 ensemble = np.random.multivariate_normal(mean, cov, size=2000)
 func = lambda x: ss.multivariate_normal.pdf(x, mean=mean, cov=cov)
-print(quad_2(func, ensemble))
-
+print(quad_3(func, ensemble))
+"""
 print(tfp.monte_carlo.expectation(func, ensemble))
 log_func = lambda x: np.log(ss.multivariate_normal.pdf(x, mean=mean, cov=cov))
 tfp.mcmc.NoUTurnSampler(log_func, 0.1)
@@ -35,10 +42,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 def integrand(x, **kwargs):
-    """ Function:
-       x_{1} * x_{2} ... * x_{n}
-       x: array of dimension (events, n)
-    """
+
     return ss.multivariate_normal.pdf(x, mean=mean, cov=cov)
 
 mvn = tfd.MultivariateNormalDiag(
@@ -55,3 +59,4 @@ integ = vegas.Integrator([[-5, 5], [-5, 5]])
 
 result = integ(integrand, nitn=10, neval=200)
 print(result.mean, type(result.mean))
+"""
