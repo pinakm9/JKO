@@ -56,5 +56,5 @@ class JKOLSTM(jko.JKOSolver):
             h, c = self.lstm_layers[i](x, h, c)
             h = self.batch_norm(h)
             c = self.batch_norm(c)
-        return self.final_dense(h) / self.normalizer
+        return self.normalizer(self.final_dense(h))
 

@@ -4,6 +4,27 @@ import tables
 import wasserstein as ws
 import vegas
 import os
+import copy
+
+
+class Normalizer(tf.keras.layers.Layer):
+    """
+    Description:
+        A non-trainable layer containing only a scalar
+    Args:
+        dtype: tf.float32 or tf.float64
+    """
+    def __init__(self, value=1.0, dtype=tf.float32):
+        super().__init__(dtype=dtype, name='Normalizer')
+        self.value = value
+    
+    def build(self, input_shape):
+        self.c = self.add_weight(shape=(input_shape[-1], 1), initializer=tf.keras.initializers.Constant(value=self.value), trainable=False,\
+                                 name = 'normalization_constant')
+
+    def call(self, x):
+        return x / self.c
+
 
 class JKOSolver(tf.keras.models.Model):
     """
@@ -30,7 +51,7 @@ class JKOSolver(tf.keras.models.Model):
         self.sinkhorn_iters = sinkhorn_iters
         super().__init__(name=name, dtype=dtype)
         self.current_time = 0
-        self.normalizer = 1.0
+        self.normalizer = Normalizer(value=1.0, dtype=self.dtype)
         self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
         try:
             os.mkdir(self.folder)
@@ -42,6 +63,13 @@ class JKOSolver(tf.keras.models.Model):
         Description:
             prepares for the next time step
         """
+        self.save_weights()
+        if self.current_time == 0:
+            self.sister = copy.deepcopy(self)
+        else:
+            self.sister.load_weights(time_id=self.current_time)
+        
+
         self.current_time += 1
         self.prev_ref_pts = self.curr_ref_pts
         hdf5_ens = tables.open_file(self.ens_file, 'r')
@@ -147,37 +175,6 @@ class JKOSolver(tf.keras.models.Model):
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
-    #@tf.function
-    def learn_density(self, ensemble, weights, epochs=10, initial_rate=1e-3):
-        """
-        Description:
-            attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
-        Args:
-            epochs: number of epochs to train
-            initial_rate: initial learning rate
-        """
-        weights /= tf.reduce_mean(weights) 
-        self.curr_ref_pts = ensemble#tf.convert_to_tensor(ensemble, dtype=self.dtype)
-        self.prev_weights = weights#tf.convert_to_tensor(weights, dtype=self.dtype)
-        cost = ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2)
-        self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
-        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        #print(self.curr_cost)
-        #print(self.curr_ref_pts)
-        #print(True in tf.math.is_nan(tf.reshape(self.curr_cost, (-1,))))
-        for epoch in range(epochs):
-            with tf.GradientTape() as tape:
-                self.curr_weights = tf.reshape(self.prob(self.curr_ref_pts), (-1,))
-                self.curr_weights /= tf.reduce_sum(self.curr_weights)
-                #print(self.curr_weights)
-                loss = ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
-                                         epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
-                print('epoch = {}, Sinkhorn loss = {}'.format(epoch + 1, loss.numpy()))
-                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of Sinkhorn loss. Exiting training loop ...')
-                    break
-                grads = tape.gradient(loss, self.trainable_weights)
-                optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
     def compute_normalizer(self, domain, nitn=10, neval=200):
         """
@@ -192,7 +189,8 @@ class JKOSolver(tf.keras.models.Model):
         integrator = vegas.Integrator(domain)
         def integrand(x, n_dim=None, weight=None):
             return self.call(tf.convert_to_tensor([x], dtype=self.dtype)).numpy()[0][0]
-        self.normalizer = integrator(integrand, nitn=nitn, neval=neval).mean
+        normalization_constant = integrator(integrand, nitn=nitn, neval=neval).mean
+        self.normalizer.set_weights([np.array([[normalization_constant]])])
         
     def save_weights(self):
         """
