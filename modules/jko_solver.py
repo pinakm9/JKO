@@ -69,20 +69,49 @@ class JKOSolver(tf.keras.models.Model):
         else:
             self.sister.load_weights(time_id=self.current_time)
         
-
+        # update the clock
         self.current_time += 1
+        # set the previous reference points
         self.prev_ref_pts = self.curr_ref_pts
+        self.prev_weights = tf.reshape(self.call(self.prev_ref_pts), (-1,))
+        self.prev_weights /= tf.reduce_sum(self.prev_weights)
+        # set the new reference points
         hdf5_ens = tables.open_file(self.ens_file, 'r')
         pts = getattr(hdf5_ens.root, 'time_' + str(self.current_time)).read().tolist()
         hdf5_ens.close()
         self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
-        self.curr_weights = self.call(self.curr_ref_pts)
-        self.prev_weights = tf.ones_like(self.curr_weights) / self.curr_weights.shape[0]
+        # set the new cost matrix
         hdf5_cost = tables.open_file(self.cost_file, 'r')
-        cost = getattr(hdf5_cost.root, 'time_' + str(self.current_time)).read().tolist()
+        cost = getattr(hdf5_cost.root, 'time_' + str(self.current_time - 1)).read().tolist()
         hdf5_cost.close()
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
 
+    def update(self, epochs=10, initial_rate=1e-3):
+        """
+        Description:
+            trains the network to learn the solution at current time step
+        Args:
+            epochs: number of epochs to train
+            initial_rate: initial learning rate
+        """
+        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        for epoch in range(epochs):
+            with tf.GradientTape() as tape:
+                self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
+                self.curr_weights /= tf.reduce_sum(self.curr_weights)
+                loss_W = ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
+                                         epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
+                loss_E = self.loss_E(self.curr_ref_pts)
+                loss_S = self.loss_S(self.curr_ref_pts)
+                loss = loss_W + loss_E + loss_S
+                print('epoch = {}, Wasserstein-loss = {:.4f}, E-loss = {:4f}, S-loss = {:4f}'.format(epoch + 1, loss_W.numpy(), loss_E.numpy(), loss_S.numpy()))
+                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
+                    print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
+                    break
+                grads = tape.gradient(loss, self.trainable_weights)
+                optimizer.apply_gradients(zip(grads, self.trainable_weights))
+
+            
     def loss_E(self, x):
         """
         Description:
@@ -113,7 +142,7 @@ class JKOSolver(tf.keras.models.Model):
         """
         return ws.sinkhorn_loss(self.prev_ref_pts, self.curr_ref_pts, self.prev_weights, self.curr_weights, self.curr_cost)
 
-    def learn_initial_condition(self, epochs=10, initial_rate=1e-3):
+    def learn_initial_condition(self, epochs=100, initial_rate=1e-3):
         """
         Description:
             attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
@@ -129,26 +158,23 @@ class JKOSolver(tf.keras.models.Model):
         cost = ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2)
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        #print(self.curr_cost)
-        #print(self.curr_ref_pts)
         print(True in tf.math.is_nan(tf.reshape(self.curr_cost, (-1,))))
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
                 self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
-                #self.curr_weights /= tf.reduce_sum(self.curr_weights)
-                #print(self.curr_weights)
+                self.curr_weights /= tf.reduce_sum(self.curr_weights)
                 loss = ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
                                          epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
-                print('epoch = {}, Sinkhorn loss = {}'.format(epoch + 1, loss.numpy()))
+                print('epoch = {}, Wasserstein-loss = {}'.format(epoch + 1, loss.numpy()))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of Sinkhorn loss. Exiting training loop ...')
+                    print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
-            
+                
 
     #@tf.function
-    def learn_unnormalized_density(self, ensemble, weights, epochs=10, initial_rate=1e-3):
+    def learn_unnormalized_density(self, ensemble, weights, epochs=100, initial_rate=1e-3):
         """
         Description:
             attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
@@ -168,9 +194,9 @@ class JKOSolver(tf.keras.models.Model):
                 self.curr_weights /= tf.reduce_sum(self.curr_weights)
                 loss = ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
                                          epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
-                print('epoch = {}, Sinkhorn loss = {}'.format(epoch + 1, loss.numpy()))
+                print('epoch = {}, Wasserstein loss = {}'.format(epoch + 1, loss.numpy()))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of Sinkhorn loss. Exiting training loop ...')
+                    print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
