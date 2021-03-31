@@ -24,17 +24,18 @@ class SDE:
         hdf5 = tables.open_file(record_path, 'w')
         hdf5.close()
         self.dtype = dtype
-        col = tables.Float64Col if self.dtype == np.float64 else tables.Float32Col
+        self.col = tables.Float64Col if self.dtype == np.float64 else tables.Float32Col
         self.point_description = {}
         for j in range(space_dim):
-            self.point_description['x' + str(j)] = col(pos = j)
+            self.point_description['x' + str(j)] = self.col(pos = j)
 
-    def evolve(self, initial_ensemble, final_time, time_step):
+    def evolve(self, initial_ensemble, initial_probs, final_time, time_step):
         """
         Description:
             evolves an initial ensemble according to the SDE dynamics
         Args:
             initial_ensemble: the ensemble that starts the evolution
+            initial_probs: probabilities for the members of the initial ensemble
             final_time: final time in the evolution assuming we're starting at time=0
             time_step: time_step in Euler-Maruyma method
         """
@@ -46,6 +47,9 @@ class SDE:
         # record the initial ensemble
         tbl = hdf5.create_table(hdf5.root, 'time_0', self.point_description)
         tbl.append(initial_ensemble)
+        tbl.flush()
+        tbl = hdf5.create_table(hdf5.root, 'probs_0', {'probs': self.col(pos = 0)})
+        tbl.append(initial_probs)
         tbl.flush()
         for step in range(num_steps):
             # evolve ensemble with Euler-Maruyama
@@ -121,13 +125,14 @@ class SDEPlotter:
             plt.savefig(self.frames_folder + '/frame_{}.png'.format(frame))
             print('Frame {} has been drawn.'.format(frame))
 
-        for frame, _ in enumerate(hdf5.walk_nodes("/", "Table")):
+        num_frames = len(list(hdf5.walk_nodes("/", "Table"))) - 1
+        for frame in range(num_frames):
             update_plot(frame)
 
         height, width, _ = cv2.imread(self.frames_folder + '/frame_0.png').shape
         video_path = os.path.dirname(self.ens_file) + '/{}'.format(os.path.basename(self.ens_file).split('.')[0]) + '.mp4'
         video = cv2.VideoWriter(video_path, fourcc = cv2.VideoWriter_fourcc(*'mp4v'), frameSize=(width,height), fps=24)
-        for frame, _ in enumerate(hdf5.walk_nodes("/", "Table")):
+        for frame in range(num_frames):
             video.write(cv2.imread(self.frames_folder + '/frame_{}.png'.format(frame)))
         cv2.destroyAllWindows()
         video.release()

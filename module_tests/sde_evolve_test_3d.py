@@ -14,9 +14,11 @@ import numpy as np
 # create initial ensemle
 dtype = np.float64
 dimension = 3
+ensemble_size = 100
 mean = np.zeros(dimension)
 cov = 0.1 * np.identity(dimension)
-initial_ensemble = np.random.random((100, dimension)) * 2 - 1#np.random.multivariate_normal(mean, cov, size=100)
+initial_ensemble = np.random.random((ensemble_size, dimension)) * 2 - 1#np.random.multivariate_normal(mean, cov, size=100)
+initial_probs = np.ones(ensemble_size) / ensemble_size
 
 # create an SDE object
 def mu(t, X_t):
@@ -30,7 +32,7 @@ def sigma(t, X_t):
 eqn = sde.SDE(dimension, mu, sigma, 'data/sde_evolve_test_3d.h5', dtype=dtype)
 
 # evolve the ensemble and record the evolution
-eqn.evolve(initial_ensemble, 5.0, 0.1)
+eqn.evolve(initial_ensemble, initial_probs, 5.0, 0.1)
 
 # animate the evolution
 sde.SDEPlotter('data/sde_evolve_test_3d.h5', time_step=0.1)
