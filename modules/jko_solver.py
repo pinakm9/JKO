@@ -3,6 +3,7 @@ import numpy as np
 import tables
 import wasserstein as ws
 import vegas
+import os
 
 class JKOSolver(tf.keras.models.Model):
     """
@@ -18,17 +19,23 @@ class JKOSolver(tf.keras.models.Model):
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         dtype: tf.float32 or tf.float64
         name: name of the JKOSolver network
+        save_path: path to the directory where a new folder of the same name as the network will be created for storing weights and biases 
     """
-    def __init__(self, psi, beta, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64, name = 'JKOSolver'):
+    def __init__(self, psi, beta, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float32, name = 'JKOSolver', save_path=None):
         self.psi = psi
         self.beta = beta
         self.ens_file = ens_file
         self.cost_file = cost_file
         self.sinkhorn_epsilon = sinkhorn_epsilon
         self.sinkhorn_iters = sinkhorn_iters
-        self.current_time = 0
         super().__init__(name=name, dtype=dtype)
+        self.current_time = 0
         self.normalizer = 1.0
+        self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
+        try:
+            os.mkdir(self.folder)
+        except:
+            pass
 
     def prepare(self):
         """
@@ -47,8 +54,6 @@ class JKOSolver(tf.keras.models.Model):
         cost = getattr(hdf5_cost.root, 'time_' + str(self.current_time)).read().tolist()
         hdf5_cost.close()
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
-        
-
 
     def loss_E(self, x):
         """
@@ -189,3 +194,20 @@ class JKOSolver(tf.keras.models.Model):
             return self.call(tf.convert_to_tensor([x], dtype=self.dtype)).numpy()[0][0]
         self.normalizer = integrator(integrand, nitn=nitn, neval=neval).mean
         
+    def save_weights(self):
+        """
+        Description:
+            saves model weights with a time index
+        """
+        super().save_weights(self.folder + '\weights_' + str(self.current_time))
+
+    def load_weights(self, time_id):
+        """
+        Description:
+            loads model weights given a time index if the weight file exists
+        """
+        weight_file = self.folder + '\weights_' + str(time_id)
+        if os.path.isfile(weight_file + '.index'):
+            super().load_weights(weight_file).expect_partial()
+        else:
+            print('Weight file does not exist for time id = {}. Weights were not loaded.'.format(time_id))

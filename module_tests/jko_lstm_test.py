@@ -44,7 +44,7 @@ weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
 solver = jko.JKOLSTM(30, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
 solver(ensemble)
 solver.summary()
-
+solver.load_weights(time_id=2)
 
 class SolverDensity(tf.keras.models.Model):
     def __init__(self):
@@ -70,3 +70,4 @@ solver.compute_normalizer(domain)
 #SolverDensity()
 plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
 plotter.plot('images/lstm_after.png')
+solver.save_weights()
