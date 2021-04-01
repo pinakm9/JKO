@@ -5,7 +5,7 @@ import wasserstein as ws
 import vegas
 import os
 import copy
-
+import utility as ut
 
 class Normalizer(tf.keras.layers.Layer):
     """
@@ -83,32 +83,38 @@ class JKOSolver(tf.keras.models.Model):
         hdf5_cost.close()
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
 
-    def update(self, epochs=100, initial_rate=1e-3):
+    @ut.timer
+    def update(self, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
         """
         Description:
             trains the network to learn the solution at current time step
         Args:
             epochs: number of epochs to train
             initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
         """
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
                 self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
                 self.curr_weights /= tf.reduce_sum(self.curr_weights)
-                loss_W = ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
+                loss_W = ws.sinkhorn_loss(self.curr_ref_pts, self.prev_ref_pts, self.curr_weights, self.prev_weights, self.curr_cost,\
                                          epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
                 loss_E = self.loss_E(self.curr_ref_pts)
                 loss_S = self.loss_S(self.curr_ref_pts)
-                loss = loss_W + loss_E + loss_S
+                loss = 0.5 * loss_W + self.time_step * (loss_E + loss_S)
                 print('epoch = {}, Wasserstein-loss = {:.4f}, E-loss = {:4f}, S-loss = {:4f}'.format(epoch + 1, loss_W, loss_E, loss_S))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
+                    print('Invalid value encountered during computation of loss. Exiting training loop ...')
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self.compute_normalizer(domain, nitn=nitn, neval=neval)
 
-    def solve(self, final_time_id=None, epochs_per_step=100, initial_rate=1e-3):
+    @ut.timer
+    def solve(self, domain, final_time_id=None, epochs_per_step=100, initial_rate=1e-3, nitn=10, neval=200):
         """
         Description:
             solves the equation till a given number of time step
@@ -117,16 +123,22 @@ class JKOSolver(tf.keras.models.Model):
                             should be less than whatever's available in the ensemble evolution file 
             epochs_per_step: number of epochs to train per time step
             initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
+            
         """
         if final_time_id is None:
             final_time_id = self.final_available_time_id
         else:
             final_time_id = min(self.final_available_time_id, final_time_id)
-        self.learn_initial_condition(epochs=epochs_per_step, initial_rate=initial_rate)
+        self.save_weights(time_id='random')
+        self.learn_initial_condition(domain, epochs=epochs_per_step, initial_rate=initial_rate, nitn=nitn, neval=neval)
         self.save_weights()
         for _ in range(final_time_id):
             self.prepare()
-            self.update(epochs=epochs_per_step, initial_rate=initial_rate)
+            self.load_weights(time_id='random')
+            self.update(domain, epochs=epochs_per_step, initial_rate=initial_rate, nitn=nitn, neval=neval)
             self.save_weights()
             
     def loss_E(self, x):
@@ -150,7 +162,7 @@ class JKOSolver(tf.keras.models.Model):
             Monte carlo approximation of the integral
         """
         y = tf.math.log(self.call(x))
-        return tf.reduce_mean(y)
+        return tf.reduce_mean(y) / self.beta
 
     def loss_W2(self):
         """
@@ -159,13 +171,17 @@ class JKOSolver(tf.keras.models.Model):
         """
         return ws.sinkhorn_loss(self.prev_ref_pts, self.curr_ref_pts, self.prev_weights, self.curr_weights, self.curr_cost)
 
-    def learn_initial_condition(self, epochs=100, initial_rate=1e-3):
+    @ut.timer
+    def learn_initial_condition(self, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
         """
         Description:
             attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
         Args:
             epochs: number of epochs to train
             initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
         """
         hdf5_ens = tables.open_file(self.ens_file, 'r')
         pts = getattr(hdf5_ens.root.ensemble, 'time_0').read()
@@ -175,7 +191,6 @@ class JKOSolver(tf.keras.models.Model):
         self.prev_weights = tf.convert_to_tensor(weights, dtype=self.dtype) / weights.sum()
         self.curr_cost = tf.convert_to_tensor(ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2), dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        print(True in tf.math.is_nan(tf.reshape(self.curr_cost, (-1,))))
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
                 self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
@@ -188,16 +203,21 @@ class JKOSolver(tf.keras.models.Model):
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self.compute_normalizer(domain, nitn=nitn, neval=neval)
                 
 
     #@tf.function
-    def learn_unnormalized_density(self, ensemble, weights, epochs=100, initial_rate=1e-3):
+    @ut.timer
+    def learn_density(self, ensemble, weights, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
         """
         Description:
             attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
         Args:
             epochs: number of epochs to train
             initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
         """
         weights /= tf.reduce_mean(weights) 
         self.curr_ref_pts = ensemble#tf.convert_to_tensor(ensemble, dtype=self.dtype)
@@ -216,6 +236,7 @@ class JKOSolver(tf.keras.models.Model):
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self.compute_normalizer(domain, nitn=nitn, neval=neval)
 
 
     def compute_normalizer(self, domain, nitn=10, neval=200):
@@ -234,12 +255,15 @@ class JKOSolver(tf.keras.models.Model):
         normalization_constant = integrator(integrand, nitn=nitn, neval=neval).mean
         self.normalizer.set_weights([np.array([[normalization_constant]])])
         
-    def save_weights(self):
+    def save_weights(self, time_id=None):
         """
         Description:
             saves model weights with a time index
+        Args:
+            time_id: a tag for differentiating time
         """
-        super().save_weights(self.folder + '\weights_' + str(self.current_time))
+        id = time_id if time_id is not None else str(self.current_time)
+        super().save_weights(self.folder + '\weights_' + id)
 
     def load_weights(self, time_id):
         """

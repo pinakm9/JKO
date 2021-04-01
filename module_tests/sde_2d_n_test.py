@@ -29,6 +29,7 @@ cost_file = 'data/sde_evolve_test_2d_n_cost_2.h5'
 dtype = tf.float32
 dimension = 2
 num_components = 10
+domain = 2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]])
 cov = 0.1*np.identity(dimension)
 weights = np.ones(num_components)
 rv = gc.GaussianCircle(cov, weights)
@@ -48,7 +49,7 @@ solver(ensemble)
 solver.summary()
 
 
-solver.solve(3, epochs_per_step=3)
-plotter = pltr.JKOPlotter(funcs=[solver.interpolate()], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
+solver.solve(domain, final_time_id=15, epochs_per_step=200)
+plotter = pltr.JKOPlotter(funcs=[solver.interpolate()], space=domain, num_pts_per_dim=45)
 #plotter.plot('images/sde_2d_n_sol.png', t=0.15)
-plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.27])
+plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 1.5])
