@@ -2,7 +2,7 @@ import numpy as np
 import tables
 import tensorflow as tf
 
-def compute_cost_matrix(ensemble_1, ensemble_2, p=2, dtype=np.float64):
+def compute_cost_matrix(ensemble_1, ensemble_2, p=2):
     """
     Description:
         calculates the cost matrix for Wasserstein distance calculation
@@ -10,7 +10,6 @@ def compute_cost_matrix(ensemble_1, ensemble_2, p=2, dtype=np.float64):
         ensemble_1: first ensemble for Wasserstein distance calculation
         ensemble_2: second ensemble for Wasserstein distance calculation  
         p: p-norm to be used, default=2
-        dtype: numpy dtype to be used, default=np.float64
     Returns:
         the cost matrix 
     """
@@ -20,7 +19,7 @@ def compute_cost_matrix(ensemble_1, ensemble_2, p=2, dtype=np.float64):
             cost[i][j] = ((x-y)**p).sum()
     return cost
 
-def compute_cost_evolution(ens_file, save_path, p=2, dtype=np.float64):
+def compute_cost_evolution(ens_file, save_path, p=2):
     """
     Description:
         calculates cost matrices and saves them for an ensemble evolution
@@ -28,20 +27,15 @@ def compute_cost_evolution(ens_file, save_path, p=2, dtype=np.float64):
         ens_file: path to .h5 file containing ensemble evolution
         save_path: path to .h5 file where the cost matricesa are to be saved
         p: p-norm to be used, default=2
-        dtype: numpy dtype to be used, default=np.float64  
     """
     hdf5_ens = tables.open_file(ens_file, 'r')
     hdf5_cost = tables.open_file(save_path, 'w')
-    steps = len(list(hdf5_ens.walk_nodes("/", "Table"))) - 1
-    col_type = tables.Float64Col if dtype == np.float64 else tables.Float32Col
-    for time_id in range(steps - 1):
-        ensemble_1 = np.array(getattr(hdf5_ens.root, 'time_' + str(time_id)).read().tolist(), dtype=dtype)
-        ensemble_2 = np.array(getattr(hdf5_ens.root, 'time_' + str(time_id + 1)).read().tolist(), dtype=dtype)
-        cost = compute_cost_matrix(ensemble_1, ensemble_2, p, dtype)
-        col_description = {'col_' + str(i): col_type(pos = i) for i in range(len(ensemble_2))}
-        tbl = hdf5_cost.create_table(hdf5_cost.root, 'time_' + str(time_id), col_description)
-        tbl.append(cost)
-        tbl.flush()
+    num_steps = hdf5_ens.root.config.read()[0][0]
+    for time_id in range(num_steps):
+        ensemble_1 = getattr(hdf5_ens.root.ensemble, 'time_' + str(time_id)).read()
+        ensemble_2 = getattr(hdf5_ens.root.ensemble, 'time_' + str(time_id + 1)).read()
+        cost = compute_cost_matrix(ensemble_1, ensemble_2, p)
+        hdf5_cost.create_array(hdf5_cost.root, 'time_' + str(time_id), cost)
     hdf5_ens.close()
     hdf5_cost.close()
 

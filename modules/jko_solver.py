@@ -49,6 +49,9 @@ class JKOSolver(tf.keras.models.Model):
         self.cost_file = cost_file
         self.sinkhorn_epsilon = sinkhorn_epsilon
         self.sinkhorn_iters = sinkhorn_iters
+        hdf5 = tables.open_file(ens_file, 'r')
+        self.final_available_time_id, self.time_step, self.ensemble_size, self.dim = hdf5.root.config.read()[0]
+        hdf5.close()
         super().__init__(name=name, dtype=dtype)
         self.current_time = 0
         self.normalizer = Normalizer(value=1.0, dtype=self.dtype)
@@ -71,12 +74,12 @@ class JKOSolver(tf.keras.models.Model):
         self.prev_weights /= tf.reduce_sum(self.prev_weights)
         # set the new reference points
         hdf5_ens = tables.open_file(self.ens_file, 'r')
-        pts = getattr(hdf5_ens.root, 'time_' + str(self.current_time)).read().tolist()
+        pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
         hdf5_ens.close()
         self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
         # set the new cost matrix
         hdf5_cost = tables.open_file(self.cost_file, 'r')
-        cost = getattr(hdf5_cost.root, 'time_' + str(self.current_time - 1)).read().tolist()
+        cost = getattr(hdf5_cost.root, 'time_' + str(self.current_time - 1)).read()
         hdf5_cost.close()
         self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
 
@@ -115,9 +118,6 @@ class JKOSolver(tf.keras.models.Model):
             epochs_per_step: number of epochs to train per time step
             initial_rate: initial learning rate
         """
-        hdf5_ens = tables.open_file(self.ens_file, 'r')
-        self.final_available_time_id = len(list(hdf5_ens.walk_nodes("/", "Table"))) - 1
-        hdf5_ens.close()
         if final_time_id is None:
             final_time_id = self.final_available_time_id
         else:
@@ -168,8 +168,8 @@ class JKOSolver(tf.keras.models.Model):
             initial_rate: initial learning rate
         """
         hdf5_ens = tables.open_file(self.ens_file, 'r')
-        pts = getattr(hdf5_ens.root, 'time_0').read().tolist()
-        weights = np.array(getattr(hdf5_ens.root, 'probs_0').read().tolist()).flatten()
+        pts = getattr(hdf5_ens.root.ensemble, 'time_0').read()
+        weights = getattr(hdf5_ens.root.probabilities, 'probs_0').read()
         hdf5_ens.close()
         self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
         self.prev_weights = tf.convert_to_tensor(weights, dtype=self.dtype) / weights.sum()
@@ -251,3 +251,13 @@ class JKOSolver(tf.keras.models.Model):
             super().load_weights(weight_file).expect_partial()
         else:
             print('Weight file does not exist for time id = {}. Weights were not loaded.'.format(time_id))
+
+    def interpolate(self):
+        """
+        Description:
+            interpolates the solution between time steps
+        Returns:
+            the interpolated function
+        """
+        def soln(t, x):
+            pass

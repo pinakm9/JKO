@@ -41,7 +41,7 @@ eqn = sde.SDE(dimension, mu_, sigma, 'data/sde_evolve_test_2d_n.h5', dtype=dtype
 eqn.evolve(initial_ensemble, initial_probs, 5.0, 0.1)
 
 # animate the evolution
-sde.SDEPlotter('data/sde_evolve_test_2d_n.h5', time_step=0.1)#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
+#sde.SDEPlotter('data/sde_evolve_test_2d_n.h5')#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
 
 # compute the cost matrices
 ws.compute_cost_evolution(ens_file='data/sde_evolve_test_2d_n.h5', save_path='data/sde_evolve_test_2d_n_cost_2.h5')
