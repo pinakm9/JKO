@@ -48,4 +48,7 @@ solver(ensemble)
 solver.summary()
 
 
-solver.solve(5, epochs_per_step=3)
+solver.solve(3, epochs_per_step=3)
+plotter = pltr.JKOPlotter(funcs=[solver.interpolate()], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
+#plotter.plot('images/sde_2d_n_sol.png', t=0.15)
+plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.27])

@@ -3,6 +3,7 @@ import tensorflow as tf
 import cv2
 import os
 import matplotlib.pyplot as plt
+import shutil
 
 class JKOPlotter:
     def __init__(self, funcs, space=[[0., 1.]], num_pts_per_dim=15):
@@ -43,7 +44,7 @@ class JKOPlotter:
 
     
     #@ut.timer
-    def animate(self, file_path, t, num_frames=240, style='standard', fig_size=(8, 8), solo=False, x_lim=None, y_lim=None, z_lim=None, wireframe=False):
+    def animate(self, file_path, t, num_frames=48, style='standard', fig_size=(8, 8), solo=False, x_lim=None, y_lim=None, z_lim=None, wireframe=False):
         # create folder to store images
         try:
             frames_folder = os.path.dirname(file_path) + '/{}'.format(os.path.basename(file_path).split('.')[0])
@@ -126,8 +127,7 @@ class JKOPlotter:
                         if t is None:
                             data[i, :] = tf.reshape(func(tf.concat([x, y], axis=1)), shape=(-1, )).numpy()
                         else:
-                            t_ = tf.fill(x.shape, t)
-                            data[i, :] = tf.reshape(func(t_, x, y), shape=(-1, )).numpy()
+                            data[i, :] = tf.reshape(func(t, tf.concat([x, y], axis=1)), shape=(-1, )).numpy()
                     geom_data.append(data)
 
 

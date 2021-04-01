@@ -251,6 +251,7 @@ class JKOSolver(tf.keras.models.Model):
             super().load_weights(weight_file).expect_partial()
         else:
             print('Weight file does not exist for time id = {}. Weights were not loaded.'.format(time_id))
+            exit()
 
     def interpolate(self):
         """
@@ -260,4 +261,9 @@ class JKOSolver(tf.keras.models.Model):
             the interpolated function
         """
         def soln(t, x):
-            pass
+            time_id = int(t / self.time_step)
+            self.load_weights(time_id)
+            return self.call(x)
+        setattr(soln, 'dtype', self.dtype)
+        setattr(soln, 'name', self.name)
+        return soln
