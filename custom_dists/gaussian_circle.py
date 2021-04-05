@@ -19,7 +19,6 @@ class GaussianCircle:
         angle = 2.0 * np.pi / self.num_modes
         for i in range(self.num_modes):
             self.means[i, :2] = np.cos(i * angle), np.sin(i * angle)
-        print('My weights are = {}'.format(self.weights))
 
     def sample(self, size):
         """
