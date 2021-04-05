@@ -1,4 +1,4 @@
-# add modules to Python's search path
+#add modules to Python's search path
 import sys
 from pathlib import Path
 from os.path import dirname, realpath
@@ -40,7 +40,7 @@ class CustomDensity(tf.keras.models.Model):
 real_density = CustomDensity()
 ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver = jko.JKORealNVP(dimension, 1, 10, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
+solver = jko.JKORealNVP(dimension, 1, 5, psi, beta, ens_file, cost_file, sinkhorn_iters=20)
 solver(ensemble)
 solver.summary()
 
@@ -53,8 +53,20 @@ class SolverDensity(tf.keras.models.Model):
         return solver.prob(x) #/ self.c
 solver_density = SolverDensity()
 
-plotter = pltr.JKOPlotter(funcs=[solver_density, real_density], space=3.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=25)
-plotter.plot('images/realNVP_before.png')
-solver.learn_density(ensemble, weights, epochs=100, initial_rate=0.001)
-plotter = pltr.JKOPlotter(funcs=[solver_density, real_density], space=3.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=25)
-plotter.plot('images/realNVP_after.png')
+#"""
+domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
+plotter = pltr.JKOPlotter(funcs=[solver.prob], space=domain, num_pts_per_dim=45)
+plotter.plot('images/realnvp_before.png')
+
+solver.learn_density(ensemble, weights, domain, epochs=350, initial_rate=0.01)
+
+plotter = pltr.JKOPlotter(funcs=[solver.prob], space=domain, num_pts_per_dim=45)
+plotter.plot('images/realnvp_after.png')
+#solver.save_weights()
+mean = np.zeros(2)
+cov = np.identity(2)
+samples = np.random.multivariate_normal(mean, cov, 10000)
+probs = ss.multivariate_normal.pdf(samples, mean, cov)
+print(tf.reduce_mean(solver.prob(samples) / probs))
+print(tf.reduce_mean(solver.prob(ensemble) / weights))
+#"""

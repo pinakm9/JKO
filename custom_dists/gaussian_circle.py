@@ -19,6 +19,7 @@ class GaussianCircle:
         angle = 2.0 * np.pi / self.num_modes
         for i in range(self.num_modes):
             self.means[i, :2] = np.cos(i * angle), np.sin(i * angle)
+        print('My weights are = {}'.format(self.weights))
 
     def sample(self, size):
         """
@@ -30,9 +31,9 @@ class GaussianCircle:
              the generated samples
         """
         samples = np.zeros((size, self.dim))
+        idx = np.random.choice(self.num_modes, size=size, replace=True, p=self.weights)
         for i in range(size):
-            j = np.random.choice(self.num_modes, p=self.weights)
-            samples[i, :] = np.random.multivariate_normal(mean=self.means[j], cov=self.cov, size=1)
+            samples[i, :] = np.random.multivariate_normal(mean=self.means[idx[i]], cov=self.cov, size=1)
         return samples
 
     def pdf(self, x):

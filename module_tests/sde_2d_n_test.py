@@ -22,9 +22,9 @@ import jko_solver as jkos
 def psi(x):
     return (x[:, 0]**2 + x[:, 1]**2 - 1.0)**2
 
-beta = 10.0 
-ens_file = 'data/sde_evolve_test_2d_n.h5'
-cost_file = 'data/sde_evolve_test_2d_n_cost_2.h5'
+beta = 200.0 
+ens_file = 'data/sde_evolve_test_2d_n_001.h5'
+cost_file = 'data/sde_evolve_test_2d_n_cost_2_001.h5'
 
 dtype = tf.float32
 dimension = 2
@@ -33,6 +33,26 @@ domain = 2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]])
 cov = 0.1*np.identity(dimension)
 weights = np.ones(num_components)
 rv = gc.GaussianCircle(cov, weights)
+
+
+def diff_op(f, x, y):
+    r2 = x*x + y*y
+    z = 4.0*(r2 - 1.0)
+    with tf.GradientTape() as outer_x, tf.GradientTape() as outer_y:
+        outer_x.watch(x)
+        outer_y.watch(y)
+        with tf.GradientTape() as inner:
+            inner.watch([x, y])
+            f_ = f(x, y)
+        grad = inner.gradient(f_, [x, y])
+        f_x = grad[0]
+        f_y = grad[1]
+    f_xx = outer_x.gradient(f_x, x)
+    f_yy = outer_y.gradient(f_y, y)
+    a = (x*z) * f_x
+    b = (y*z) * f_y
+    c = 4.0 * (z + 2.0) * f_
+    return a + b + c + (f_xx + f_yy) / beta
 
 class CustomDensity(tf.keras.models.Model):
     def __init__(self, dtype=tf.float32):
@@ -44,12 +64,12 @@ class CustomDensity(tf.keras.models.Model):
 real_density = CustomDensity()
 ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver = jko.JKOLSTM(30, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
+solver = jko.JKOLSTM(50, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=20)
 solver(ensemble)
 solver.summary()
 
 
-solver.solve(domain, final_time_id=15, epochs_per_step=200)
-plotter = pltr.JKOPlotter(funcs=[solver.interpolate()], space=domain, num_pts_per_dim=45)
-#plotter.plot('images/sde_2d_n_sol.png', t=0.15)
-plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 1.5])
+solver.solve_2(domain, diff_op, 20, 350)
+plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=30)
+plotter.plot('images/sde_2d_n_sol.png')
+#plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.2], num_frames=24)

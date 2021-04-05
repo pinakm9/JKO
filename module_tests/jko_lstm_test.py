@@ -41,15 +41,12 @@ class CustomDensity(tf.keras.models.Model):
         return tf.convert_to_tensor(rv.pdf(x), dtype=self.dtype)
 
 real_density = CustomDensity()
-ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver = jko.JKOLSTM(30, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=50)
+ensemble = tf.convert_to_tensor(rv.sample(size=500), dtype=dtype)
+weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype) #
+solver = jko.JKOLSTM(50, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=20)
 solver(ensemble)
 solver.summary()
-solver.load_weights(time_id=2)
-
-norm = jkos.Normalizer(9.0)
-print(norm(solver(ensemble)))
+#solver.load_weights(time_id=0)
 
 
 
@@ -60,13 +57,21 @@ print(norm(solver(ensemble)))
 
 
 #"""
-plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
-plotter.plot('images/lstm_before.png')
-solver.learn_unnormalized_density(ensemble, weights, epochs=350, initial_rate=0.001)
 domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
-solver.compute_normalizer(domain)
+plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=45)
+plotter.plot('images/lstm_before.png')
 
-plotter = pltr.JKOPlotter(funcs=[solver], space=2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]]), num_pts_per_dim=45)
+solver.learn_density_2(ensemble, weights, domain, epochs=350, initial_rate=0.001)
+
+plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=domain, num_pts_per_dim=45)
 plotter.plot('images/lstm_after.png')
-solver.save_weights()
+#solver.save_weights()
+mean = np.zeros(2)
+cov = np.identity(2)
+samples = np.random.multivariate_normal(mean, cov, 10000)
+probs = ss.multivariate_normal.pdf(samples, mean, cov)
+ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
+weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype) #
+print(tf.reduce_mean(solver(samples) / probs))
+print(tf.reduce_mean(solver(ensemble) / weights))
 #"""

@@ -10,7 +10,8 @@ class JKOPlotter:
         self.funcs = funcs
         self.space = space
         self.num_pts_per_dim = num_pts_per_dim
-        self.coord_data = [tf.reshape(tf.linspace(tf.cast(d[0], funcs[0].dtype), d[1], num=num_pts_per_dim), shape=(-1, 1)) for d in space]
+        self.dtype = funcs[0].dtype if hasattr(funcs[0], 'dtype') else tf.float32
+        self.coord_data = [tf.reshape(tf.linspace(tf.cast(d[0], self.dtype), d[1], num=num_pts_per_dim), shape=(-1, 1)) for d in space]
 
     def plot(self, file_path, t=None, style='standard', fig_size=(8, 8), solo=False, x_lim=None, y_lim=None, z_lim=None, wireframe=False):
         # determine the type of plot

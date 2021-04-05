@@ -3,7 +3,7 @@ import tables
 import os
 import matplotlib.pyplot as plt
 import cv2
-import shutil
+import shutil, copy
 
 class SDE:
     """
@@ -37,19 +37,17 @@ class SDE:
         hdf5 = tables.open_file(self.record_path, 'w')
         ens_folder = hdf5.create_group(hdf5.root, 'ensemble')
         prob_folder = hdf5.create_group(hdf5.root, 'probabilities')
-        new_ensemble = np.zeros((self.num_particles, self.space_dim))
+        new_ensemble = initial_ensemble#np.zeros((self.num_particles, self.space_dim))
         # record the initial ensemble
         hdf5.create_array(ens_folder, 'time_0', initial_ensemble)
         hdf5.create_array(prob_folder, 'probs_0', initial_probs)
         for step in range(num_steps):
             # evolve ensemble with Euler-Maruyama
             noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
-            for i, particle in enumerate(initial_ensemble):
-                new_ensemble[i] = particle + self.mu(step*time_step, particle)*time_step + np.dot(self.sigma(step*time_step, particle), noise)
+            for i in range(self.num_particles):
+                new_ensemble[i] += self.mu(step*time_step, new_ensemble[i])*time_step + np.dot(self.sigma(step*time_step, new_ensemble[i]), noise)
             # record the new ensemble
             hdf5.create_array(ens_folder, 'time_' + str(step + 1), new_ensemble)
-            # prepare for the next step
-            initial_ensemble = new_ensemble
         # add some extra useful information to the evolution file
         class Config(tables.IsDescription):
             num_steps = tables.Int32Col(pos=0)

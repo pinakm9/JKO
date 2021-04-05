@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
-import jko_solver as jko 
+import jko_solver_nf as jko 
 tfb = tfp.bijectors
 tfd = tfp.distributions
 
@@ -14,7 +14,7 @@ class JKORealNVP(jko.JKOSolver):
         self.output_dim = output_dim
         self.num_masked = num_masked
         self.num_bijectors = num_bijectors
-        self.shift_and_log_scale_fn = tfb.real_nvp_default_template(hidden_layers=[128, 128])
+        self.shift_and_log_scale_fn = tfb.real_nvp_default_template(hidden_layers=[500, 300])
         # Defining the bijector
         bijectors=[]
         for i in range(num_bijectors):

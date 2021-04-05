@@ -14,7 +14,9 @@ import scipy.stats as ss
 import wasserstein as ws
 
 # create initial ensemle
-dtype = np.float64
+dtype = np.float32
+beta = 200.0
+s = 0.1#np.sqrt(2.0/beta)
 dimension = 2
 mean = np.zeros(dimension)
 cov = 0.1 * np.identity(dimension)
@@ -33,15 +35,15 @@ def mu_(t, X_t):
     return np.array([x*z , y*z], dtype=dtype)
 
 def sigma(t, X_t):
-    return 0.1 * np.identity(dimension, dtype=dtype)
+    return s * np.identity(dimension, dtype=dtype)
 
-eqn = sde.SDE(dimension, mu_, sigma, 'data/sde_evolve_test_2d_n.h5', dtype=dtype)
+eqn = sde.SDE(dimension, mu_, sigma, 'data/sde_evolve_test_2d_n_001.h5', dtype=dtype)
 
 # evolve the ensemble and record the evolution
-eqn.evolve(initial_ensemble, initial_probs, 5.0, 0.1)
+eqn.evolve(initial_ensemble, initial_probs, 1.0, 0.01)
 
 # animate the evolution
-#sde.SDEPlotter('data/sde_evolve_test_2d_n.h5')#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
+sde.SDEPlotter('data/sde_evolve_test_2d_n_001.h5')#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
 
 # compute the cost matrices
-ws.compute_cost_evolution(ens_file='data/sde_evolve_test_2d_n.h5', save_path='data/sde_evolve_test_2d_n_cost_2.h5')
+ws.compute_cost_evolution(ens_file='data/sde_evolve_test_2d_n_001.h5', save_path='data/sde_evolve_test_2d_n_cost_2_001.h5')
