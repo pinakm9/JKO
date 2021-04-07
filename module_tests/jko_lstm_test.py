@@ -41,9 +41,9 @@ class CustomDensity(tf.keras.models.Model):
         return tf.convert_to_tensor(rv.pdf(x), dtype=self.dtype)
 
 real_density = CustomDensity()
-ensemble = tf.convert_to_tensor(rv.sample(size=500), dtype=dtype)
+ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype) #
-solver = jko.JKOLSTM(50, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=20)
+solver = jko.JKOLSTM(30, 4, psi, beta, ens_file, cost_file, sinkhorn_iters=20)
 solver(ensemble)
 solver.summary()
 #solver.load_weights(time_id=0)
@@ -58,13 +58,13 @@ solver.summary()
 
 #"""
 domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
-plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=45)
-plotter.plot('images/lstm_before.png')
+plotter = pltr.JKOPlotter(funcs=[real_density], space=domain, num_pts_per_dim=45)
+plotter.plot('images/lstm_before.png', wireframe=True)
 
 solver.learn_density_2(ensemble, weights, domain, epochs=350, initial_rate=0.001)
 
 plotter = pltr.JKOPlotter(funcs=[solver, real_density], space=domain, num_pts_per_dim=45)
-plotter.plot('images/lstm_after.png')
+plotter.plot('images/lstm_after.png', wireframe=True)
 #solver.save_weights()
 mean = np.zeros(2)
 cov = np.identity(2)

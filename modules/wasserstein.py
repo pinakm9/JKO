@@ -16,7 +16,7 @@ def compute_cost_matrix(ensemble_1, ensemble_2, p=2):
     cost = np.zeros((len(ensemble_1), len(ensemble_2)))
     for i, x in enumerate(ensemble_1):
         for j, y in enumerate(ensemble_2):
-            cost[i][j] = ((x-y)**p).sum()
+            cost[i][j] = (np.abs(x-y)**p).sum()
     return cost
 
 def compute_cost_evolution(ens_file, save_path, p=2):
@@ -35,6 +35,25 @@ def compute_cost_evolution(ens_file, save_path, p=2):
         ensemble_1 = getattr(hdf5_ens.root.ensemble, 'time_' + str(time_id)).read()
         ensemble_2 = getattr(hdf5_ens.root.ensemble, 'time_' + str(time_id + 1)).read()
         cost = compute_cost_matrix(ensemble_1, ensemble_2, p)
+        hdf5_cost.create_array(hdf5_cost.root, 'time_' + str(time_id), cost)
+    hdf5_ens.close()
+    hdf5_cost.close()
+
+def compute_cost_evolution_fp(ens_file, save_path, p=2):
+    """
+    Description:
+        calculates cost matrices and saves them for an ensemble evolution
+    Args:
+        ens_file: path to .h5 file containing ensemble evolution
+        save_path: path to .h5 file where the cost matricesa are to be saved
+        p: p-norm to be used, default=2
+    """
+    hdf5_ens = tables.open_file(ens_file, 'r')
+    hdf5_cost = tables.open_file(save_path, 'w')
+    num_steps = hdf5_ens.root.config.read()[0][0]
+    for time_id in range(num_steps + 1):
+        ensemble = getattr(hdf5_ens.root.ensemble, 'time_' + str(time_id)).read()
+        cost = compute_cost_matrix(ensemble, ensemble, p)
         hdf5_cost.create_array(hdf5_cost.root, 'time_' + str(time_id), cost)
     hdf5_ens.close()
     hdf5_cost.close()

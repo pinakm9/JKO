@@ -5,7 +5,7 @@ import os
 import matplotlib.pyplot as plt
 import shutil
 
-class JKOPlotter:
+class NNPlotter:
     def __init__(self, funcs, space=[[0., 1.]], num_pts_per_dim=15):
         self.funcs = funcs
         self.space = space

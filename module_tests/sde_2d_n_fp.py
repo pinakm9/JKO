@@ -10,12 +10,8 @@ sys.path.insert(0, root + '/custom_dists')
 # import required modules
 import fp_lstm as fp
 import numpy as np
-import scipy.stats as ss
 import tensorflow as tf
 import nn_plotter as pltr
-import gaussian_circle as gc
-import vegas
-import fp_solver as fps
 
 
 
@@ -25,7 +21,6 @@ cost_file = 'data/sde_evolve_test_2d_n_cost_2_001.h5'
 
 dtype = tf.float64
 dimension = 2
-num_components = 10
 domain = 2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]])
 
 class DiffOp(tf.keras.layers.Layer):
@@ -51,36 +46,13 @@ class DiffOp(tf.keras.layers.Layer):
         b = (y*z) * f_y
         c = 4.0 * (z + 2.0) * f_
         return a + b + c + (f_xx + f_yy) / beta
-    
 
-solver = fp.FPDGM(20, 4, DiffOp, ens_file, cost_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
+solver = fp.FPForget(20, 6, DiffOp, ens_file, cost_file, sinkhorn_iters=20, name='FPForget_2d_n', rk_order=2, dtype=dtype)
 solver.summary()
 
 
-num_components = 10
-cov = 0.1*np.identity(dimension)
-weights = np.ones(num_components)
-rv = gc.GaussianCircle(cov, weights)
-
-class CustomDensity(tf.keras.models.Model):
-    def __init__(self, dtype=dtype):
-        super().__init__(dtype=dtype)
-
-    def call(self, x):
-        return tf.convert_to_tensor(rv.pdf(x), dtype=self.dtype)
-
-real_density = CustomDensity()
-ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
-print('ensemble dtype = ', solver(ensemble).dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype) #
-
-
-#"""
-domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
-plotter = pltr.NNPlotter(funcs=[solver], space=domain, num_pts_per_dim=50)
-plotter.plot('images/fp_lstm_before.png')
-
-solver.learn_density(ensemble, weights, domain, epochs=300, initial_rate=0.001)
-
-plotter = pltr.NNPlotter(funcs=[solver, real_density], space=domain, num_pts_per_dim=50)
-plotter.plot('images/fp_lstm_after.png')
+solver.solve(domain, 100, 0, 300)
+solver.summary()
+#plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=30)
+#plotter.plot('images/sde_2d_n_sol.png')
+#plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.2], num_frames=24)

@@ -46,4 +46,4 @@ eqn.evolve(initial_ensemble, initial_probs, 1.0, 0.01)
 sde.SDEPlotter('data/sde_evolve_test_2d_n_001.h5')#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
 
 # compute the cost matrices
-ws.compute_cost_evolution(ens_file='data/sde_evolve_test_2d_n_001.h5', save_path='data/sde_evolve_test_2d_n_cost_2_001.h5')
+ws.compute_cost_evolution_fp(ens_file='data/sde_evolve_test_2d_n_001.h5', save_path='data/sde_evolve_test_2d_n_cost_2_001.h5')
