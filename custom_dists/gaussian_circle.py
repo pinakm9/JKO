@@ -1,5 +1,7 @@
 import numpy as np 
 import scipy.stats as ss
+import tensorflow as tf
+import tensorflow_probability as tfp
 
 class GaussianCircle:
     """
@@ -17,8 +19,11 @@ class GaussianCircle:
         self.dim = cov.shape[0]
         self.means = np.zeros((self.num_modes, self.dim))
         angle = 2.0 * np.pi / self.num_modes
+        self.tf_probs = []
+        scale_tril = tf.linalg.cholesky(cov)
         for i in range(self.num_modes):
             self.means[i, :2] = np.cos(i * angle), np.sin(i * angle)
+            self.tf_probs.append(tfp.distributions.MultivariateNormalTriL(loc=self.means[i], scale_tril=scale_tril).prob)
 
     def sample(self, size):
         """
@@ -44,7 +49,21 @@ class GaussianCircle:
         Returns:
              the computed probabilities
         """
-        probs =  np.zeros(x.shape[0])
+        probs =  0.0
         for i in range(self.num_modes):
             probs += self.weights[i] * ss.multivariate_normal.pdf(x, mean=self.means[i], cov=self.cov)
         return probs
+
+    def prob(self, x):
+        """
+        Description:
+            computes probability for given samples in tensorflow format
+        Args:
+            x: samples at which probability is to be computed
+        Returns:
+             the computed probabilities
+        """
+        probs = 0.0
+        for i in range(self.num_modes):
+            probs += self.weights[i] * self.tf_probs[i](x)
+        return tf.reshape(probs, (-1, 1))

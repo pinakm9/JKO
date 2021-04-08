@@ -9,6 +9,7 @@ import utility as ut
 import scipy.stats as ss
 import nn_plotter as pltr
 import math
+import derivative as dr
 
 class Normalizer(tf.keras.layers.Layer):
     """
@@ -21,36 +22,11 @@ class Normalizer(tf.keras.layers.Layer):
         super().__init__(dtype=dtype, name='Normalizer')
     
     def build(self, input_shape):
-        self.c = self.add_weight(shape=(input_shape[-1], 1), initializer=tf.keras.initializers.Constant(value=1.0), trainable=False,\
+        self.c = self.add_weight(shape=(input_shape[-1], 1), initializer=tf.keras.initializers.Constant(value=1.0), trainable=True,\
                                  name = 'normalization_constant')
 
     def call(self, x):
         return x / self.c
-
-class RKLayer(tf.keras.layers.Layer):
-    """
-    Description:
-        RK4 for y_t = f(y) where f is a linear operator
-    Args:
-        f: a layer representing f in the ODE
-        y: a callable object representing y in the ODE
-        step: step size in RK method 
-        order: order of RK method
-    """
-    def __init__(self, f, y, step, order=2, dtype=tf.float64):
-        super().__init__(dtype=dtype, name='RK4Layer')
-        self.step = step
-        self.terms = [y]
-        for _ in range(order):
-            self.terms.append(f(self.terms[-1]))
-          
-
-    def call(self, *args):
-        z = 0.0
-        for i, term in enumerate(self.terms):
-            z += self.step**i * term(*args) / math.factorial(i) 
-        return z
-
 
 
 class FPSolver(tf.keras.models.Model):
@@ -67,7 +43,7 @@ class FPSolver(tf.keras.models.Model):
         name: name of the FPSolver network
         save_path: path to the directory where a new folder of the same name as the network will be created for storing weights and biases 
     """
-    def __init__(self, diff_op, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64, name = 'FPSolver', save_path=None,\
+    def __init__(self, diff_op, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=20, dtype=tf.float64, name = 'FPSolver', save_path=None,\
                 rk_order=2):
         self.ens_file = ens_file
         self.cost_file = cost_file
@@ -86,7 +62,7 @@ class FPSolver(tf.keras.models.Model):
             os.mkdir(self.folder)
         except:
             pass
-        
+        self.partials = dr.FirstPartials(self.call_2, self.dim)
         
 
     def summary(self):
@@ -97,6 +73,7 @@ class FPSolver(tf.keras.models.Model):
         x = tf.zeros((1, 1), dtype=self.dtype)
         args = [x for _ in range(self.dim)]
         self.normalizer(x)
+        self.partials(*args)
         #self.rk_layer(*args)
         self(tf.concat(args, axis=-1))
         super().summary()
@@ -108,7 +85,7 @@ class FPSolver(tf.keras.models.Model):
             computes probabilities associated with the given ensemble using RK method
         """
         args = tf.split(pts, self.dim, axis=1)
-        return RKLayer(self.diff_op, self.call_2, self.time_step, self.rk_order, self.dtype)(*args)
+        return dr.RKLayer(self.diff_op, self.call_2, self.time_step, self.rk_order, self.dtype)(*args)
 
     def prepare(self):
         """
@@ -207,19 +184,28 @@ class FPSolver(tf.keras.models.Model):
                                 self.target_weights, self.curr_cost,\
                                 epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
 
-    def loss_Eq(self):
+    def loss_Eq(self, first_partials, second_partials):
         """
         Description:
             computes the Equality loss
         """
-        return tf.reduce_sum(self.curr_weights - self.target_weights)**2
+        fp, self.curr_weights = self.partials(*tf.split(self.curr_ref_pts, self.dim, axis=1))
+        loss = tf.reduce_mean(tf.math.abs(self.curr_weights - self.target_weights))
+        for i, partial in enumerate(first_partials):
+            loss += tf.reduce_mean(tf.math.abs(fp[i] - partial))
+        """
+        for i in range(self.dim):
+            for j in range(self.dim):
+                loss += tf.reduce_mean(tf.math.square(sp[i][j] - second_partials[i][j]))
+        """
+        return loss
 
-    def loss_DO(self):
+    def loss_KL(self):
         """
         Description:
             computes the differential operator loss
         """
-        return tf.reduce_sum(self.curr_weights - self.target_weights)**2
+        return tf.reduce_mean(self.target_weights * tf.math.log(self.call(self.curr_ref_pts)/self.target_weights))
 
 
     #@tf.function
@@ -252,12 +238,28 @@ class FPSolver(tf.keras.models.Model):
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
         self.compute_normalizer(domain, nitn=nitn, neval=neval)
-        #"""
+  
+
+    @ut.timer
+    def learn_density_2(self, ensemble, weights, first_partials, second_partials, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
+        """
+        Description:
+            attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
+        Args:
+            epochs: number of epochs to train
+            initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
+        """
+        self.target_weights = weights
+        self.curr_ref_pts = ensemble#tf.convert_to_tensor(ensemble, dtype=self.dtype)
+        optimizer = tf.keras.optimizers.Adadelta(learning_rate=0.1)#initial_rate)
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
                 self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
                 #loss_W2 = self.loss_W2()
-                loss_Eq = self.loss_Eq()
+                loss_Eq = self.loss_Eq(first_partials, second_partials)
                 loss =  loss_Eq
                 print('epoch = {}, Equality loss = {:6f}'.format(epoch + 1, loss_Eq))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
@@ -266,7 +268,7 @@ class FPSolver(tf.keras.models.Model):
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
         #"""
-
+        #self.compute_normalizer(domain, nitn=nitn, neval=neval)
 
     def compute_normalizer(self, domain, nitn=10, neval=200):
         """

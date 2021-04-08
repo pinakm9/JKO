@@ -16,7 +16,7 @@ import nn_plotter as pltr
 import gaussian_circle as gc
 import vegas
 import fp_solver as fps
-
+import derivative as dr
 
 
 beta = 200.0 
@@ -53,7 +53,7 @@ class DiffOp(tf.keras.layers.Layer):
         return a + b + c + (f_xx + f_yy) / beta
     
 
-solver = fp.FPDGM(20, 4, DiffOp, ens_file, cost_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
+solver = fp.FPForget(20, 4, DiffOp, ens_file, cost_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
 solver.summary()
 
 
@@ -69,18 +69,55 @@ class CustomDensity(tf.keras.models.Model):
     def call(self, x):
         return tf.convert_to_tensor(rv.pdf(x), dtype=self.dtype)
 
+    def call_2(self, x, y):
+        X = tf.concat([x, y], axis=1)
+        return rv.prob(X)
+
 real_density = CustomDensity()
-ensemble = tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
-print('ensemble dtype = ', solver(ensemble).dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype) #
-
-
+partials_rd = dr.FirstPartials(real_density.call_2, 2)
 #"""
 domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
 plotter = pltr.NNPlotter(funcs=[solver], space=domain, num_pts_per_dim=50)
 plotter.plot('images/fp_lstm_before.png')
 
-solver.learn_density(ensemble, weights, domain, epochs=300, initial_rate=0.001)
+#"""
+ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
+weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
+solver.learn_density(ensemble, weights, domain, epochs=350, initial_rate=0.001)
 
-plotter = pltr.NNPlotter(funcs=[solver, real_density], space=domain, num_pts_per_dim=50)
-plotter.plot('images/fp_lstm_after.png')
+for _ in range(10):
+    ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
+    #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
+    first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))
+    solver.learn_density_2(ensemble, weights, first_partials, 0, domain, epochs=1000, initial_rate=0.001)
+    #solver.compute_normalizer(domain)
+"""
+ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
+weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
+solver.learn_density(ensemble, weights, domain, epochs=200, initial_rate=0.001)
+ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
+weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
+solver.learn_density_2(ensemble, weights, domain, epochs=400, initial_rate=0.001)
+
+ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
+weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
+solver.learn_density(ensemble, weights, domain, epochs=200, initial_rate=0.001)
+
+for _ in range(1):
+    ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
+    weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
+    solver.learn_density_2(ensemble, weights, domain, epochs=5000, initial_rate=0.001)
+
+"""
+
+
+#"""
+ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
+a = tf.reshape(solver(ensemble), (-1))
+b = rv.pdf(ensemble.numpy())
+c = tf.math.abs(a - b)
+print(c)
+print(tf.reduce_mean(c))
+plotter = pltr.NNPlotter(funcs=[solver], space=domain, num_pts_per_dim=50)
+plotter.plot('images/fp_lstm_after.png', wireframe=True)
+#"""
