@@ -53,7 +53,7 @@ class DiffOp(tf.keras.layers.Layer):
         return a + b + c + (f_xx + f_yy) / beta
     
 
-solver = fp.FPForget(20, 4, DiffOp, ens_file, cost_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
+solver = fp.FPForget(20, 4, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
 solver.summary()
 
 
@@ -83,32 +83,14 @@ plotter.plot('images/fp_lstm_before.png')
 #"""
 ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver.learn_density(ensemble, weights, domain, epochs=350, initial_rate=0.001)
+solver.learn_density(ensemble, weights, domain, epochs=3, initial_rate=0.001)
 
-for _ in range(10):
-    ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
+for _ in range(3):
+    ensemble = tf.convert_to_tensor(rv.sample(size=10), dtype=dtype)
     #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
     first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))
-    solver.learn_density_2(ensemble, weights, first_partials, 0, domain, epochs=1000, initial_rate=0.001)
+    solver.learn_function(ensemble, weights, first_partials, epochs=5, initial_rate=0.001)
     #solver.compute_normalizer(domain)
-"""
-ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver.learn_density(ensemble, weights, domain, epochs=200, initial_rate=0.001)
-ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver.learn_density_2(ensemble, weights, domain, epochs=400, initial_rate=0.001)
-
-ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver.learn_density(ensemble, weights, domain, epochs=200, initial_rate=0.001)
-
-for _ in range(1):
-    ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
-    weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-    solver.learn_density_2(ensemble, weights, domain, epochs=5000, initial_rate=0.001)
-
-"""
 
 
 #"""
