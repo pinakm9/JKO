@@ -47,11 +47,11 @@ class DiffOp(tf.keras.layers.Layer):
         c = 4.0 * (z + 2.0) * f_
         return a + b + c + (f_xx + f_yy) / beta
 
-solver = fp.FPForget(20, 4, DiffOp, ens_file, sinkhorn_iters=10, sinkhorn_epsilon=0.01, name='FPForget_2d_n', rk_order=2, dtype=dtype)
-solver.summary()
+solver = fp.FPForget(20, 4, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, name='FPForget_2d_n', rk_order=2, dtype=dtype)
+#solver.summary()
 
 
-solver.solve(domain, 10, 0, 3)
+solver.solve(domain, 30, 0, 500)
 #plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=30)
 #plotter.plot('images/sde_2d_n_sol.png')
 #plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.2], num_frames=24)

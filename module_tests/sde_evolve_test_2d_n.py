@@ -24,19 +24,25 @@ s = np.sqrt(2.0/beta)
 dimension = 2
 mean = np.zeros(dimension)
 cov = 0.1 * np.identity(dimension)
-initial_ensemble = np.random.multivariate_normal(mean, cov, size=3000)
+
+
 
 class InitialPDF(tf.keras.layers.Layer):
     def __init__(self, dtype=dtype):
         super().__init__(dtype=dtype)
-        self.pdf = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov)).prob
+        self.dist = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov))
+        self.pdf = self.dist.prob
+    def sample(self, size):
+        return self.dist.sample(size)
     def call(self, *args):
-        print('length', len(args), args[0])
         x = tf.concat(args, axis=1)
         return self.pdf(x)
 
+
+
 pdf = InitialPDF()
 d_pdf = dr.FirstPartials(pdf, 2, dtype)
+initial_ensemble = pdf.sample(2000)
 initial_first_partials, initial_probs = d_pdf(*tf.split(initial_ensemble, dimension, axis=1))
 initial_first_partials = [elem.numpy() for elem in initial_first_partials]
 initial_probs = initial_probs.numpy()
@@ -58,7 +64,7 @@ def sigma(t, X_t):
 eqn = sde.SDE(dimension, mu_, sigma, 'data/sde_evolve_test_2d_n_001.h5', dtype=np_dtype)
 
 # evolve the ensemble and record the evolution
-eqn.evolve(initial_ensemble, initial_probs, initial_first_partials, 1.0, 0.01)
+eqn.evolve(initial_ensemble.numpy(), initial_probs, initial_first_partials, 1.0, 0.01)
 
 # animate the evolution
 sde.SDEPlotter('data/sde_evolve_test_2d_n_001.h5')#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])

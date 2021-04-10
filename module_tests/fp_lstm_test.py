@@ -83,13 +83,13 @@ plotter.plot('images/fp_lstm_before.png')
 #"""
 ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver.learn_density(ensemble, weights, domain, epochs=3, initial_rate=0.001)
+solver.learn_density(ensemble, weights, domain, epochs=350, initial_rate=0.001)
 
 for _ in range(3):
-    ensemble = tf.convert_to_tensor(rv.sample(size=10), dtype=dtype)
+    ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
     #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
     first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))
-    solver.learn_function(ensemble, weights, first_partials, epochs=5, initial_rate=0.001)
+    solver.learn_function(ensemble, weights, first_partials, epochs=1000, initial_rate=0.001)
     #solver.compute_normalizer(domain)
 
 
