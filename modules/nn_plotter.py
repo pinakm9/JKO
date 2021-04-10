@@ -4,6 +4,9 @@ import cv2
 import os
 import matplotlib.pyplot as plt
 import shutil
+#import scipy as sp
+
+
 
 class NNPlotter:
     def __init__(self, funcs, space=[[0., 1.]], num_pts_per_dim=15):
@@ -128,7 +131,7 @@ class NNPlotter:
                         if t is None:
                             data[i, :] = tf.reshape(func(tf.concat([x, y], axis=1)), shape=(-1, )).numpy()
                         else:
-                            data[i, :] = tf.reshape(func(t, tf.concat([x, y], axis=1)), shape=(-1, )).numpy()
+                            data[i, :] = tf.reshape(func(t, tf.concat([x, y], axis=1)), shape=(-1, )).numpy() 
                     geom_data.append(data)
 
 
@@ -183,7 +186,7 @@ class NNPlotter:
                     d['Y'] = Y
                     d['Z'] = geom_data[i]
                     if i == 0:
-                        d['cmap'] = 'viridis'
+                        d['cmap'] = 'RdYlBu_r'
                     args.append([])
                     kwargs.append(d)
 
@@ -200,14 +203,14 @@ class NNPlotter:
                 d['X'] = X
                 d['Y'] = Y
                 d['Z'] = geom_data
-                d['cmap'] = 'viridis'
+                d['cmap'] = 'RdYlBu_r'
                 args.append([])
                 kwargs.append(d)
 
         elif self.style.endswith('heatmap'):
             d = {}
             d['X'] = geom_data
-            d['cmap'] = 'viridis'
+            d['cmap'] = 'RdYlBu_r'
             d['extent'] = (self.space[0][0], self.space[0][1], self.space[1][0], self.space[1][1])
             d['origin'] = 'lower'
             args.append([])

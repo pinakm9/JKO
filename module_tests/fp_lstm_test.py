@@ -53,7 +53,7 @@ class DiffOp(tf.keras.layers.Layer):
         return a + b + c + (f_xx + f_yy) / beta
     
 
-solver = fp.FPForget(20, 4, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
+solver = fp.FPVanilla(100, 3, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
 solver.summary()
 
 
@@ -85,7 +85,7 @@ ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
 weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
 solver.learn_density(ensemble, weights, domain, epochs=350, initial_rate=0.001)
 
-for _ in range(3):
+for _ in range(2):
     ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
     #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
     first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))

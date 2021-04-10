@@ -20,7 +20,7 @@ class RKLayer(tf.keras.layers.Layer):
         for _ in range(order):
             self.terms.append(f(self.terms[-1]))
           
-
+    @tf.function
     def call(self, *args):
         z = 0.0
         for i, term in enumerate(self.terms):
@@ -42,6 +42,7 @@ class FirstPartials(tf.keras.layers.Layer):
         self.dim = dim
         super().__init__(name='FirstPartials', dtype=dtype)
 
+    @tf.function
     def call(self, *args):
         with tf.GradientTape() as tape:
             tape.watch(args)
@@ -52,7 +53,7 @@ class FirstPartials(tf.keras.layers.Layer):
 class SecondPartials(tf.keras.layers.Layer):
     """
     Description:
-        Computes first partial derivatives of a given function
+        Computes the second partial derivatives of a given function
     Args:
         func: function to differentiate
         dim: input dimension of the function
@@ -62,6 +63,7 @@ class SecondPartials(tf.keras.layers.Layer):
         self.dim = dim
         super().__init__(name='FirstPartials', dtype=dtype)
 
+    @tf.function
     def call(self, *args):
         with ExitStack() as stack:
             outer_tapes = [stack.enter_context(tf.GradientTape(persistent=True)) for _ in args]
@@ -71,7 +73,31 @@ class SecondPartials(tf.keras.layers.Layer):
                 tape.watch(args)
                 f = self.func(*args)
             first_partials = tape.gradient(f, args)
-        second_partials = []
-        for partial in first_partials:
-            second_partials.append([outer_tapes[i].gradient(partial, arg) for i, arg in enumerate(args)])
+        second_partials = [outer_tapes[j].gradient(partial, args[j]) for j in range(i) for i, partial in enumerate(first_partials)]
+        return second_partials, first_partials, f
+
+class DiagSecondPartials(tf.keras.layers.Layer):
+    """
+    Description:
+        Computes the diagonal second partial derivatives of a given function
+    Args:
+        func: function to differentiate
+        dim: input dimension of the function
+    """
+    def __init__(self, func, dim, dtype=tf.float64):
+        self.func = func
+        self.dim = dim
+        super().__init__(name='FirstPartials', dtype=dtype)
+
+    @tf.function
+    def call(self, *args):
+        with ExitStack() as stack:
+            outer_tapes = [stack.enter_context(tf.GradientTape()) for _ in args]
+            for i, arg in enumerate(args):
+                outer_tapes[i].watch(arg)
+            with tf.GradientTape() as tape:
+                tape.watch(args)
+                f = self.func(*args)
+            first_partials = tape.gradient(f, args)
+        second_partials = [outer_tapes[i].gradient(partial, args[i]) for i, partial in enumerate(first_partials)]
         return second_partials, first_partials, f

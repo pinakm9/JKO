@@ -19,7 +19,7 @@ import tensorflow as tf
 # create initial ensemle
 dtype = tf.float64
 np_dtype = np.float64
-beta = 128.0
+beta = 10.0
 s = np.sqrt(2.0/beta)
 dimension = 2
 mean = np.zeros(dimension)

@@ -43,10 +43,9 @@ class FPSolver(tf.keras.models.Model):
         name: name of the FPSolver network
         save_path: path to the directory where a new folder of the same name as the network will be created for storing weights and biases 
     """
-    def __init__(self, diff_op, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=20, dtype=tf.float64, name = 'FPSolver', save_path=None,\
-                rk_order=2):
+    def __init__(self, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=20, dtype=tf.float64, name = 'FPSolver', save_path=None,\
+                rk_order=2, num_density_pts=100):
         self.ens_file = ens_file
-        self.cost_file = cost_file
         self.sinkhorn_epsilon = sinkhorn_epsilon
         self.sinkhorn_iters = sinkhorn_iters
         hdf5 = tables.open_file(ens_file, 'r')
@@ -57,14 +56,18 @@ class FPSolver(tf.keras.models.Model):
         self.normalizer = Normalizer(dtype=dtype)
         self.diff_op = diff_op
         self.rk_order = rk_order
+        self.rk_layer = dr.RKLayer(self.diff_op, self.call_2, self.time_step, self.rk_order, self.dtype)
+        self.num_density_pts = num_density_pts
         self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
         try:
             os.mkdir(self.folder)
         except:
             pass
-        self.partials = dr.FirstPartials(self.call_2, self.dim)
-        
+        self.partials = dr.FirstPartials(self.call_2, self.dim, self.dtype)
+        self.rk_partials = dr.FirstPartials(self.rk_layer, self.dim, self.dtype)
 
+        
+    @ut.timer
     def summary(self):
         """
         Description:
@@ -74,18 +77,20 @@ class FPSolver(tf.keras.models.Model):
         args = [x for _ in range(self.dim)]
         self.normalizer(x)
         self.partials(*args)
-        #self.rk_layer(*args)
+        self.rk_layer(*args)
+        self.partials(*args)
+        self.rk_partials(*args)
         self(tf.concat(args, axis=-1))
         super().summary()
         
     @ut.timer
-    def compute_probabilities(self, pts):
+    def compute_features(self, pts):
         """
         Description:
             computes probabilities associated with the given ensemble using RK method
         """
         args = tf.split(pts, self.dim, axis=1)
-        return dr.RKLayer(self.diff_op, self.call_2, self.time_step, self.rk_order, self.dtype)(*args)
+        return self.rk_partials(*args)
 
     def prepare(self):
         """
@@ -97,22 +102,23 @@ class FPSolver(tf.keras.models.Model):
         hdf5_ens = tables.open_file(self.ens_file, 'r+')
         pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
         self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
-        # set the new cost matrix
-        hdf5_cost = tables.open_file(self.cost_file, 'r')
-        cost = getattr(hdf5_cost.root, 'time_' + str(self.current_time)).read()
-        hdf5_cost.close()
-        self.curr_cost = tf.convert_to_tensor(cost, dtype=self.dtype)
         # set the target probabilities
         if self.current_time > 0:
-            self.target_weights = tf.reshape(self.compute_probabilities(self.curr_ref_pts), (-1))
+            self.target_first_partials, self.target_values = self.compute_features(self.curr_ref_pts)
             # record the computed probabilities
             if hasattr(hdf5_ens.root.probabilities, 'time_' + str(self.current_time)):
-                setattr(hdf5_ens.root.probabilities, 'time_' + str(self.current_time), self.target_weights.numpy())
+                setattr(hdf5_ens.root.probabilities, 'time_' + str(self.current_time), self.target_values.numpy())
+                for i, partial in enumerate(self.target_first_partials):
+                    setattr(getattr(hdf5_ens.root.first_partials, 'x_' + str(i)), 'time_' + str(self.current_time), partial.numpy())
             else:
-                hdf5_ens.create_array(hdf5_ens.root.probabilities, 'time_' + str(self.current_time), self.target_weights.numpy())
+                hdf5_ens.create_array(hdf5_ens.root.probabilities, 'time_' + str(self.current_time), self.target_values.numpy())
+                for i, partial in enumerate(self.target_first_partials):
+                    hdf5_ens.create_array(getattr(hdf5_ens.root.first_partials, 'x_' + str(i)), 'time_' + str(self.current_time), partial.numpy())
         elif self.current_time == 0:
-            self.target_weights = tf.convert_to_tensor(getattr(hdf5_ens.root.probabilities, 'time_0').read(), dtype=self.dtype)
-        #self.target_weights /= tf.reduce_sum(self.target_weights)
+            self.target_values = tf.convert_to_tensor(getattr(hdf5_ens.root.probabilities, 'time_0').read(), dtype=self.dtype)
+            self.target_first_partials = []
+            for i in range(self.dim):
+                self.target_first_partials.append(getattr(getattr(hdf5_ens.root.first_partials, 'x_' + str(i)), 'time_' + str(self.current_time)).read())
         hdf5_ens.close()
 
 
@@ -128,19 +134,14 @@ class FPSolver(tf.keras.models.Model):
             nitn: number of Vegas iterations
             neval: number of function evaluations per iteration
         """
-        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        for epoch in range(epochs):
-            with tf.GradientTape() as tape:
-                self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
-                #self.curr_weights /= tf.reduce_sum(self.curr_weights)
-                loss = self.loss_W2()
-                print('epoch = {}, Wasserstein-loss = {:.6f}'.format(epoch + 1, loss))
-                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of loss. Exiting training loop ...')
-                    break
-                grads = tape.gradient(loss, self.trainable_weights)
-                optimizer.apply_gradients(zip(grads, self.trainable_weights))
-        self.compute_normalizer(domain)
+        self.learn_density(self.curr_ref_pts[: self.num_density_pts], self.target_values[: self.num_density_pts],\
+                           domain, epochs, initial_rate, nitn, neval)
+        l = int(self.ensemble_size / 2)
+        j, k = 0, l
+        for _ in range(2):
+            target_first_partials = [partial[j: k] for partial in self.target_first_partials]
+            self.learn_function(self.curr_ref_pts[j: k], self.target_values[j: k], target_first_partials, epochs, initial_rate)
+            j, k = j + l, k + l
         
 
     @ut.timer
@@ -164,7 +165,7 @@ class FPSolver(tf.keras.models.Model):
         else:
             final_time_id = min(self.final_available_time_id, final_time_id)
         #self.save_weights(time_id='random')
-        plotter = pltr.NNPlotter(funcs=[self], space=domain, num_pts_per_dim=30)
+        plotter = pltr.NNPlotter(funcs=[self], space=domain, num_pts_per_dim=300)
         self.current_time = initial_time_id - 1
         for _ in range(final_time_id + 1):
             self.prepare()
@@ -175,29 +176,42 @@ class FPSolver(tf.keras.models.Model):
             plotter.plot(self.folder + '/time_{}.png'.format(self.current_time), wireframe=True)
 
     
-    def loss_W2(self):
+    def loss_S2(self, ensemble_1, ensemble_2, curr_values, target_values, cost_matrix):
         """
         Description:
-            computes the Wasserstein_2 loss
+            computes the Sinkhorn_2 loss
         """
-        return ws.sinkhorn_loss(self.curr_ref_pts, self.curr_ref_pts, self.curr_weights,\
-                                self.target_weights, self.curr_cost,\
+        return ws.sinkhorn_loss(ensemble_1, ensemble_2, curr_values, target_values, cost_matrix,\
                                 epsilon=self.sinkhorn_epsilon, num_iters=self.sinkhorn_iters)
 
-    def loss_Eq(self, first_partials, second_partials):
+    def loss_Eq_0(self, values):
         """
         Description:
             computes the Equality loss
         """
-        fp, self.curr_weights = self.partials(*tf.split(self.curr_ref_pts, self.dim, axis=1))
-        loss = tf.reduce_mean(tf.math.abs(self.curr_weights - self.target_weights))
-        for i, partial in enumerate(first_partials):
-            loss += tf.reduce_mean(tf.math.abs(fp[i] - partial))
+        return tf.reduce_mean(tf.math.square(self.values - values))
+
+    def loss_Eq_1(self, first_partials):
         """
+        Description:
+            computes the Equality loss
+        """
+        loss = 0.0
+        for i, partial in enumerate(first_partials):
+            loss +=  tf.reduce_mean(tf.math.square(self.first_partials[i] - partial))
+        return loss
+
+    def loss_Eq_2(self, second_partials):
+        """
+        Description:
+            computes the Equality loss
+        """
+        loss = 0.0
+        #"""
         for i in range(self.dim):
             for j in range(self.dim):
-                loss += tf.reduce_mean(tf.math.square(sp[i][j] - second_partials[i][j]))
-        """
+                loss +=  tf.reduce_mean(tf.math.abs(self.second_partials[i][j] - second_partials[i][j]))
+        #"""
         return loss
 
     def loss_KL(self):
@@ -221,54 +235,51 @@ class FPSolver(tf.keras.models.Model):
             nitn: number of Vegas iterations
             neval: number of function evaluations per iteration
         """
-        self.curr_ref_pts = ensemble#tf.convert_to_tensor(ensemble, dtype=self.dtype)
-        self.target_weights = weights#tf.convert_to_tensor(weights, dtype=self.dtype)
-        self.curr_cost = tf.convert_to_tensor(ws.compute_cost_matrix(self.curr_ref_pts.numpy(), self.curr_ref_pts.numpy(), p=2), dtype=self.dtype)
+        cost_matrix = tf.convert_to_tensor(ws.compute_cost_matrix(ensemble.numpy(), ensemble.numpy(), p=2), dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        prev_loss = 0.0
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
-                self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
-                loss_W2 = self.loss_W2()
-                #loss_Eq = self.loss_Eq()
-                loss = loss_W2 #+ loss_Eq
-                print('epoch = {}, Wasserstein loss = {:6f}'.format(epoch + 1, loss_W2))
+                loss = self.loss_S2(ensemble, ensemble, self.call(ensemble), weights, cost_matrix)
+                print('epoch = {}, Sinkhorn loss = {:6f}'.format(epoch + 1, loss))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
+                    print('Invalid value encountered during computation of Sinkhorn loss. Exiting training loop ...')
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
+                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
+                    break
+                else:
+                    prev_loss = loss
         self.compute_normalizer(domain, nitn=nitn, neval=neval)
   
 
     @ut.timer
-    def learn_density_2(self, ensemble, weights, first_partials, second_partials, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
+    def learn_function(self, ensemble, values, first_partials, epochs=100, initial_rate=1e-3):
         """
         Description:
-            attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
+            attempts to learn a function from its values and first partial derivatives
         Args:
             epochs: number of epochs to train
             initial_rate: initial learning rate
-            domain: box domain over which to compute the normalizing constant
-            nitn: number of Vegas iterations
-            neval: number of function evaluations per iteration
         """
-        self.target_weights = weights
-        self.curr_ref_pts = ensemble#tf.convert_to_tensor(ensemble, dtype=self.dtype)
-        optimizer = tf.keras.optimizers.Adadelta(learning_rate=0.1)#initial_rate)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        prev_loss = 0.0
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
-                self.curr_weights = tf.reshape(self.call(self.curr_ref_pts), (-1,))
-                #loss_W2 = self.loss_W2()
-                loss_Eq = self.loss_Eq(first_partials, second_partials)
-                loss =  loss_Eq
-                print('epoch = {}, Equality loss = {:6f}'.format(epoch + 1, loss_Eq))
+                self.first_partials, self.values = self.partials(*tf.split(ensemble, self.dim, axis=1))
+                loss =  self.loss_Eq_0(values) + self.loss_Eq_1(first_partials)
+                print('epoch = {}, (0+1) equality loss = {:6f}'.format(epoch + 1, loss))
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of Wasserstein loss. Exiting training loop ...')
+                    print('Invalid value encountered during computation of loss. Exiting training loop ...')
                     break
                 grads = tape.gradient(loss, self.trainable_weights)
                 optimizer.apply_gradients(zip(grads, self.trainable_weights))
-        #"""
-        #self.compute_normalizer(domain, nitn=nitn, neval=neval)
+                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
+                    break
+                else:
+                    prev_loss = loss
+  
 
     def compute_normalizer(self, domain, nitn=10, neval=200):
         """

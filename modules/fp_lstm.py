@@ -70,17 +70,16 @@ class FPForget(fp.FPSolver):
         ------ parent args ------
         diff_op: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
-        cost_file: path to cost file associated with the ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPForget', save_path=None, rk_order=2):
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, cost_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
+        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.lstm_layers = [LSTMForgetBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
         #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
@@ -108,17 +107,16 @@ class FPPeephole(fp.FPSolver):
         ------ parent args ------
         diff_op: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
-        cost_file: path to cost file associated with the ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPPeephole', save_path=None, rk_order=2):
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, cost_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
+        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.lstm_layers = [LSTMPeepholeBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
         #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
@@ -145,17 +143,16 @@ class FPDGM(fp.FPSolver):
         ------ parent args ------
         diff_op: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
-        cost_file: path to cost file associated with the ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, cost_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPDGM', save_path=None, rk_order=2):
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, cost_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
+        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
         self.lstm_layers = [DGMBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
@@ -168,3 +165,37 @@ class FPDGM(fp.FPSolver):
             S = self.lstm_layers[i](x, S)
         y = self.final_dense(S)
         return self.normalizer(y)
+
+
+class FPVanilla(fp.FPSolver):
+    """
+    Description: 
+        Vanilla architecture for the FPSolver, inherits from FPSolver
+    Args:
+        num_nodes: number of nodes in each Vanilla layer
+        num_layers: number of Vanilla layers
+        ------ parent args ------
+        diff_op: a tensorflow layer object representing the space differential operator L
+        ens_file: path to ensemble evolution file
+        sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
+        sinkhorn_iters: number of iterations for Sinkhorn algorithm
+        #dtype: tf.float32 or tf.float64
+        name: name of the FPSolver network
+    """
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+                 name = 'FPVanilla', save_path=None, rk_order=2):
+        self.num_nodes = num_nodes
+        self.num_layers = num_layers
+        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
+        self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
+        self.middle_layers = [tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype) for _ in range(num_layers)]
+        self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
+        #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
+         
+
+    def call(self, x):
+        x = self.initial_dense(x)
+        for i in range(self.num_layers):
+            x = self.middle_layers[i](x)
+        x = self.final_dense(x)
+        return self.normalizer(x)

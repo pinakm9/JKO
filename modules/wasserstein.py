@@ -77,7 +77,8 @@ def sinkhorn_loss(ensemble_1, ensemble_2, weights_1, weights_2, cost_matrix, eps
     Returns:
         The optimal cost or the (Wasserstein distance) ** p
     """
-    
+    weights_1 = tf.reshape(weights_1, (-1))
+    weights_2 = tf.reshape(weights_2, (-1))
     # Elementary operations
     def M(u,v):
         "Modified cost for logarithmic updates"

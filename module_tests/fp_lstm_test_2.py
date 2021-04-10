@@ -18,35 +18,50 @@ import vegas
 import fp_solver as fps
 import derivative as dr
 import tensorflow_probability as tfp
-
-
-beta = 200.0 
+ 
 ens_file = 'data/sde_evolve_test_2d_n_001.h5'
 cost_file = 'data/sde_evolve_test_2d_n_cost_2_001.h5'
 
 # create initial ensemle
 dtype = tf.float64
 np_dtype = np.float64
-beta = 128.0
+beta = 10.0
 s = np.sqrt(2.0/beta)
 dimension = 2
 mean = np.zeros(dimension)
-cov = 0.1 * np.identity(dimension)
+delta = 0.5
+cov = delta * np.identity(dimension)
 initial_ensemble = np.random.multivariate_normal(mean, cov, size=3000)
 
 class InitialPDF(tf.keras.layers.Layer):
     def __init__(self, dtype=dtype):
         super().__init__(dtype=dtype)
-        self.dist = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov))
-        self.pdf = self.dist.prob
+        #self.dist = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov))
+        #self.pdf = self.dist.prob
+        self.c = tf.cast(tf.math.sqrt((2.0 * np.pi * delta) ** dimension), dtype=dtype)
+        self.d = tf.cast(delta**dimension, dtype=dtype)
     def sample(self, size):
-        return self.dist.sample(size)
+        return tf.convert_to_tensor(np.random.multivariate_normal(mean=mean, cov=cov, size=size), dtype=dtype)
     def call(self, *args):
         x = tf.concat(args, axis=1)
-        return self.pdf(x)
+        return tf.math.exp(- 0.5 * tf.reduce_sum(x  ** 2, axis=1, keepdims=True) / self.d ) / self.c
+
+class FinalPDF(tf.keras.layers.Layer):
+    def __init__(self, dtype=dtype):
+        super().__init__(dtype=dtype)
+    def call(self, X):
+        x, y = tf.split(X, 2, axis=1)        
+        return tf.math.exp(-beta*(x*x + y*y - 1.0)**2)
+
 
 domain = 2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]])
 
+"""
+final_pdf = FinalPDF()
+plotter = pltr.NNPlotter(funcs=[final_pdf], space=domain, num_pts_per_dim=300)
+plotter.plot('images/final_pdf.png', wireframe=True)
+exit()
+"""
 class DiffOp(tf.keras.layers.Layer):
     def __init__(self, f):
         super().__init__(name='DiffOp', dtype=dtype)
@@ -72,23 +87,26 @@ class DiffOp(tf.keras.layers.Layer):
         return a + b + c + (f_xx + f_yy) / beta
     
 
-solver = fp.FPForget(20, 4, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
-#solver.summary()
+solver = fp.FPVanilla(20, 3, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype, rk_order=3)
+solver.summary()
 
 
 real_density = InitialPDF()
 partials_rd = dr.FirstPartials(real_density.call, 2)
+ensemble = real_density.sample(size=200)
+##print(ensemble)
+weights = real_density.call(ensemble)
+#print(real_density(ensemble))
 #"""
 domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
 plotter = pltr.NNPlotter(funcs=[real_density], space=domain, num_pts_per_dim=50)
 plotter.plot('images/real_density_2.png')
 
 #"""
-ensemble = real_density.sample(size=200)
-weights = real_density.call(ensemble)
 
 
-for _ in range(3):
+
+for _ in range(2):
     ensemble = real_density.sample(size=1000)
     #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
     first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))

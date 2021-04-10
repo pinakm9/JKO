@@ -21,13 +21,14 @@ class SDE:
         self.sigma = sigma
         self.record_path = record_path
 
-    def evolve(self, initial_ensemble, initial_probs, final_time, time_step):
+    def evolve(self, initial_ensemble, initial_probs, initial_first_partials, final_time, time_step):
         """
         Description:
             evolves an initial ensemble according to the SDE dynamics
         Args:
             initial_ensemble: the ensemble that starts the evolution
             initial_probs: probabilities for the members of the initial ensemble
+            initial_first_partials: first partial derivatives for the initial ensemble
             final_time: final time in the evolution assuming we're starting at time=0
             time_step: time_step in Euler-Maruyma method
         """
@@ -37,10 +38,14 @@ class SDE:
         hdf5 = tables.open_file(self.record_path, 'w')
         ens_folder = hdf5.create_group(hdf5.root, 'ensemble')
         prob_folder = hdf5.create_group(hdf5.root, 'probabilities')
+        hdf5.create_group(hdf5.root, 'first_partials')
         new_ensemble = initial_ensemble#np.zeros((self.num_particles, self.space_dim))
         # record the initial ensemble
         hdf5.create_array(ens_folder, 'time_0', initial_ensemble)
         hdf5.create_array(prob_folder, 'time_0', initial_probs)
+        for d in range(self.space_dim):
+            folder = hdf5.create_group(hdf5.root.first_partials, 'x_' + str(d))
+            hdf5.create_array(folder, 'time_0', initial_first_partials[d])
         for step in range(num_steps):
             # evolve ensemble with Euler-Maruyama
             noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
