@@ -45,6 +45,7 @@ class NNPlotter:
         if self.style == '1d_standard':
             plt.legend()
         plt.savefig(file_path)
+        plt.close()
 
     
     #@ut.timer
@@ -129,9 +130,9 @@ class NNPlotter:
                         y = self.coord_data[1]
                         x = tf.fill(y.shape, self.coord_data[0][i])
                         if t is None:
-                            data[i, :] = tf.reshape(func(tf.concat([x, y], axis=1)), shape=(-1, )).numpy()
+                            data[i, :] = tf.reshape(func(x, y), shape=(-1, )).numpy()
                         else:
-                            data[i, :] = tf.reshape(func(t, tf.concat([x, y], axis=1)), shape=(-1, )).numpy() 
+                            data[i, :] = tf.reshape(func(t*tf.ones_like(x), x, y), shape=(-1, )).numpy() 
                     geom_data.append(data)
 
 

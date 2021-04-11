@@ -18,6 +18,7 @@ import vegas
 import fp_solver as fps
 import derivative as dr
 import tensorflow_probability as tfp
+import utility as ut
  
 ens_file = 'data/sde_evolve_test_2d_n_001.h5'
 cost_file = 'data/sde_evolve_test_2d_n_cost_2_001.h5'
@@ -66,7 +67,7 @@ class DiffOp(tf.keras.layers.Layer):
     def __init__(self, f):
         super().__init__(name='DiffOp', dtype=dtype)
         self.f = f
-    
+
     def call(self, x, y):
         r2 = x*x + y*y
         z = 4.0*(r2 - 1.0)
@@ -87,13 +88,19 @@ class DiffOp(tf.keras.layers.Layer):
         return a + b + c + (f_xx + f_yy) / beta
     
 
-solver = fp.FPVanilla(20, 3, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype, rk_order=3)
+solver = fp.FPVanilla(20, 3, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype, rk_order=4)
 solver.summary()
+
+@ut.timer
+def fn(x):
+    solver.rk_layer(*tf.split(x, 2, axis=1))
 
 
 real_density = InitialPDF()
-partials_rd = dr.FirstPartials(real_density.call, 2)
+partials_rd = dr.SecondPartials(real_density.call, 2)
 ensemble = real_density.sample(size=200)
+fn(ensemble)
+exit()
 ##print(ensemble)
 weights = real_density.call(ensemble)
 #print(real_density(ensemble))
@@ -103,20 +110,20 @@ plotter = pltr.NNPlotter(funcs=[real_density], space=domain, num_pts_per_dim=50)
 plotter.plot('images/real_density_2.png')
 
 #"""
+region = fps.Domain(domain, dtype)
 
-
-
-for _ in range(2):
-    ensemble = real_density.sample(size=1000)
+#solver.learn_density(ensemble[:100], weights[:100], domain, epochs=350, initial_rate=0.001)
+for _ in range(12):
+    ensemble = region.sample(1000)
     #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-    first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))
-    solver.learn_density(ensemble[:100], weights[:100], domain, epochs=500, initial_rate=0.001)
-    solver.learn_function(ensemble, weights, first_partials, epochs=500, initial_rate=0.001)
+    sp, first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))
+    #
+    solver.learn_function(ensemble, weights, first_partials, sp, epochs=500, initial_rate=0.001)
     #solver.compute_normalizer(domain)
 
 
 #"""
-ensemble = real_density.sample(size=100)
+ensemble = region.sample(100)
 a = tf.reshape(solver(ensemble), (-1))
 b = tf.reshape(real_density.call(ensemble), (-1))
 c = tf.math.abs(a - b)

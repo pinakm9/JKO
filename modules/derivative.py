@@ -1,7 +1,7 @@
 import tensorflow as tf 
 from contextlib import ExitStack
 import math
-
+import utility as ut
 
 class RKLayer(tf.keras.layers.Layer):
     """
@@ -20,7 +20,7 @@ class RKLayer(tf.keras.layers.Layer):
         for _ in range(order):
             self.terms.append(f(self.terms[-1]))
           
-    @tf.function
+    
     def call(self, *args):
         z = 0.0
         for i, term in enumerate(self.terms):

@@ -23,26 +23,28 @@ beta = 10.0
 s = np.sqrt(2.0/beta)
 dimension = 2
 mean = np.zeros(dimension)
-cov = 0.1 * np.identity(dimension)
-
+delta = 0.5
+cov = delta * np.identity(dimension)
 
 
 class InitialPDF(tf.keras.layers.Layer):
     def __init__(self, dtype=dtype):
         super().__init__(dtype=dtype)
-        self.dist = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov))
-        self.pdf = self.dist.prob
+        #self.dist = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov))
+        #self.pdf = self.dist.prob
+        self.c = tf.cast(tf.math.sqrt((2.0 * np.pi * delta) ** dimension), dtype=dtype)
+        self.d = tf.cast(delta**dimension, dtype=dtype)
     def sample(self, size):
-        return self.dist.sample(size)
+        return tf.convert_to_tensor(np.random.multivariate_normal(mean=mean, cov=cov, size=size), dtype=dtype)
     def call(self, *args):
         x = tf.concat(args, axis=1)
-        return self.pdf(x)
+        return tf.math.exp(- 0.5 * tf.reduce_sum(x**2, axis=1, keepdims=True) / self.d ) / self.c
 
 
 
 pdf = InitialPDF()
 d_pdf = dr.FirstPartials(pdf, 2, dtype)
-initial_ensemble = pdf.sample(2000)
+initial_ensemble = pdf.sample(500)
 initial_first_partials, initial_probs = d_pdf(*tf.split(initial_ensemble, dimension, axis=1))
 initial_first_partials = [elem.numpy() for elem in initial_first_partials]
 initial_probs = initial_probs.numpy()

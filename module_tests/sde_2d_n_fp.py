@@ -21,7 +21,8 @@ cost_file = 'data/sde_evolve_test_2d_n_cost_2_001.h5'
 
 dtype = tf.float64
 dimension = 2
-domain = 2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]])
+delta = 0.5
+domain = 1.5*np.array([[-1.0, 1.0], [-1.0, 1.0]])
 
 class DiffOp(tf.keras.layers.Layer):
     def __init__(self, f):
@@ -47,11 +48,26 @@ class DiffOp(tf.keras.layers.Layer):
         c = 4.0 * (z + 2.0) * f_
         return a + b + c + (f_xx + f_yy) / beta
 
-solver = fp.FPForget(20, 4, DiffOp, ens_file, sinkhorn_iters=20, sinkhorn_epsilon=0.01, name='FPForget_2d_n', rk_order=3, dtype=dtype)
-#solver.summary()
+class InitialPDF(tf.keras.layers.Layer):
+    def __init__(self, dtype=dtype):
+        super().__init__(dtype=dtype)
+        #self.dist = tfp.distributions.MultivariateNormalTriL(loc=mean, scale_tril=tf.linalg.cholesky(cov))
+        #self.pdf = self.dist.prob
+        self.c = tf.cast(tf.math.sqrt((2.0 * np.pi * delta) ** dimension), dtype=dtype)
+        self.d = tf.cast(delta**dimension, dtype=dtype)
+    def sample(self, size):
+        return tf.convert_to_tensor(np.random.multivariate_normal(mean=mean, cov=cov, size=size), dtype=dtype)
+    def call(self, *args):
+        x = tf.concat(args, axis=1)
+        return tf.math.exp(- 0.5 * tf.reduce_sum(x**2, axis=1, keepdims=True) / self.d ) / self.c
+
+rk = 2
+solver = fp.FPDGM(20, 3, DiffOp, ens_file, domain, InitialPDF().call, sinkhorn_iters=20, sinkhorn_epsilon=0.01,\
+                      name='FPDGM_2_n_{}'.format(rk), rk_order=rk, dtype=dtype)
+solver.summary()
 
 
-solver.solve(domain, 100, 0, 500)
+solver.solve(100, 0, 600)
 #plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=30)
 #plotter.plot('images/sde_2d_n_sol.png')
 #plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.2], num_frames=24)

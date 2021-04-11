@@ -75,18 +75,19 @@ class FPForget(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPForget', save_path=None, rk_order=2):
+        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.lstm_layers = [LSTMForgetBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
         #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
         
         
 
-    def call(self, x):
+    def call(self, *args):
+        x = tf.concat(args, axis=1)
         h = tf.zeros_like(x)
         c = tf.zeros((x.shape[0], self.num_nodes), dtype=self.dtype)
         for i in range(self.num_layers):
@@ -112,18 +113,19 @@ class FPPeephole(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPPeephole', save_path=None, rk_order=2):
+        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.lstm_layers = [LSTMPeepholeBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
         #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
         
         
 
-    def call(self, x):
+    def call(self, *args):
+        x = tf.concat(args, axis=1)
         h = tf.zeros_like(x)
         c = tf.zeros((x.shape[0], self.num_nodes), dtype=self.dtype)
         for i in range(self.num_layers):
@@ -148,18 +150,19 @@ class FPDGM(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPDGM', save_path=None, rk_order=2):
+        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
         self.lstm_layers = [DGMBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
         #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
          
 
-    def call(self, x):
+    def call(self, *args):
+        x = tf.concat(args, axis=1)
         S = self.initial_dense(x)
         for i in range(self.num_layers):
             S = self.lstm_layers[i](x, S)
@@ -182,19 +185,19 @@ class FPVanilla(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPVanilla', save_path=None, rk_order=2):
+        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
-        super().__init__(diff_op, ens_file, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path, rk_order)
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
         self.middle_layers = [tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype) for _ in range(num_layers)]
         self.final_dense = tf.keras.layers.Dense(units=1, activation=tf.keras.activations.exponential, dtype=dtype)
         #self.batch_norm = tf.keras.layers.BatchNormalization(axis=1)
          
 
-    def call(self, x):
-        x = self.initial_dense(x)
+    def call(self, *args):
+        x = self.initial_dense(tf.concat(args, axis=1))
         for i in range(self.num_layers):
             x = self.middle_layers[i](x)
         x = self.final_dense(x)
