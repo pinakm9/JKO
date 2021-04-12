@@ -57,7 +57,7 @@ class FPSolver(tf.keras.models.Model):
         name: name of the FPSolver network
         save_path: path to the directory where a new folder of the same name as the network will be created for storing weights and biases 
     """
-    def __init__(self, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=20, dtype=tf.float64,\
+    def __init__(self, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=20, dtype=tf.float64,\
                  name = 'FPSolver', save_path=None,
                 rk_order=2, num_domain_pts=500):
         super().__init__(name=name, dtype=dtype)
@@ -71,7 +71,7 @@ class FPSolver(tf.keras.models.Model):
         hdf5.close()
         self.current_time = -1
         self.normalizer = Normalizer(dtype=dtype)
-        self.diff_op = diff_op(self.call)
+        self.diff_op = diff_ops[0](self._log_call)
         self.num_domain_pts = num_domain_pts
         self.num_total_pts = self.ensemble_size + self.num_domain_pts
         self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
@@ -79,6 +79,7 @@ class FPSolver(tf.keras.models.Model):
             os.mkdir(self.folder)
         except:
             pass
+        self.rk_layer = dr.RKLayer(diff_ops[1], self.call, self.time_step, 2, self.dtype)
 
 
         
@@ -92,10 +93,12 @@ class FPSolver(tf.keras.models.Model):
         args = [x for _ in range(self.dim + 1)]
         self.normalizer(x)
         self.diff_op(*args)
+        self.rk_layer(*args)
         self(*args)
         super().summary()
         
 
+    @ut.timer
     def prepare(self):
         """
         Description:
@@ -107,7 +110,9 @@ class FPSolver(tf.keras.models.Model):
         pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
         domain_pts = self.domain.sample(self.num_domain_pts)
         self.curr_ref_pts = [tf.concat([np.reshape(pts[:, d], (-1, 1)), domain_pts[d]], axis=0) for d in range(self.dim)]
-        if self.current_time == 0:
+        if self.current_time > 0:
+            self.target_values = self.rk_layer(self.current_time*self.time_step*tf.ones_like(self.curr_ref_pts[0]), *self.curr_ref_pts)
+        else:
             self.target_values = self.init_cond(*self.curr_ref_pts)
         hdf5_ens.close()
 
@@ -127,15 +132,17 @@ class FPSolver(tf.keras.models.Model):
         if self.current_time == 0:
             self.learn_density(self.domain.domain.numpy(), 2500, initial_rate, nitn, neval,\
                                self.target_values[: 100], 0.0, *[elem[: 100] for elem in self.curr_ref_pts])
-            l = int(self.num_total_pts / 2)
-            j, k = 0, l
-            for _ in range(2):
-                #target_first_partials = [partial[j: k] for partial in self.target_first_partials
-                self.learn_function(1000, initial_rate, self.target_values[j: k], 0.0, *[elem[j: k] for elem in self.curr_ref_pts])
-                j, k = j + l, k + l
+            if self.current_time == 0:
+                l = int(self.num_total_pts / 2)
+                j, k = 0, l
+                for _ in range(2):
+                    #target_first_partials = [partial[j: k] for partial in self.target_first_partials
+                    self.learn_function(1000, initial_rate, self.target_values[j: k], 0.0, *[elem[j: k] for elem in self.curr_ref_pts])
+                    j, k = j + l, k + l
         else:
             t = self.current_time * self.time_step
-            self.satisfy_diff_op(epochs, initial_rate, t, *self.curr_ref_pts)
+            self.satisfy_diff_op(1000, initial_rate, t, *self.curr_ref_pts)
+            self.learn_function(1000, initial_rate, self.target_values, t, *self.curr_ref_pts)
         
 
     @ut.timer
@@ -262,7 +269,8 @@ class FPSolver(tf.keras.models.Model):
         prev_loss = 0.0
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
-                loss = tf.reduce_mean(self.diff_op(t, *args)**2)
+                eqn, _log_prob = self.diff_op(t, *args)
+                loss = tf.reduce_mean(eqn**2)
                 print('epoch = {}, DiffOp loss = {:6f}'.format(epoch + 1, loss), end='\r')
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
                     print('Invalid value encountered during computation of loss. Exiting training loop ...')
@@ -362,3 +370,6 @@ class FPSolver(tf.keras.models.Model):
         setattr(soln, 'name', self.name)
         
         return soln
+
+    def _log_call(self, *args):
+        return -tf.math.log(self.call(*args))

@@ -44,7 +44,7 @@ class InitialPDF(tf.keras.layers.Layer):
 
 pdf = InitialPDF()
 d_pdf = dr.FirstPartials(pdf, 2, dtype)
-initial_ensemble = pdf.sample(500)
+initial_ensemble = pdf.sample(1500)
 initial_first_partials, initial_probs = d_pdf(*tf.split(initial_ensemble, dimension, axis=1))
 initial_first_partials = [elem.numpy() for elem in initial_first_partials]
 initial_probs = initial_probs.numpy()

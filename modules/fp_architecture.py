@@ -68,16 +68,16 @@ class FPForget(fp.FPSolver):
         num_nodes: number of nodes in each LSTM layer
         num_layers: number of LSTM layers
         ------ parent args ------
-        diff_op: a tensorflow layer object representing the space differential operator L
+        diff_ops: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPForget', save_path=None):
-        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.lstm_layers = [LSTMForgetBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
@@ -106,16 +106,16 @@ class FPPeephole(fp.FPSolver):
         num_nodes: number of nodes in each LSTM layer
         num_layers: number of LSTM layers
         ------ parent args ------
-        diff_op: a tensorflow layer object representing the space differential operator L
+        diff_ops: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPPeephole', save_path=None):
-        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.lstm_layers = [LSTMPeepholeBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
@@ -143,16 +143,16 @@ class FPDGM(fp.FPSolver):
         num_nodes: number of nodes in each DGM layer
         num_layers: number of DGM layers
         ------ parent args ------
-        diff_op: a tensorflow layer object representing the space differential operator L
+        diff_ops: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPDGM', save_path=None):
-        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
@@ -178,16 +178,16 @@ class FPVanilla(fp.FPSolver):
         num_nodes: number of nodes in each Vanilla layer
         num_layers: number of Vanilla layers
         ------ parent args ------
-        diff_op: a tensorflow layer object representing the space differential operator L
+        diff_ops: a tensorflow layer object representing the space differential operator L
         ens_file: path to ensemble evolution file
         sinkhorn_epsilon: regularization constant for Sinkhorn algorithm
         sinkhorn_iters: number of iterations for Sinkhorn algorithm
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_op, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
                  name = 'FPVanilla', save_path=None):
-        super().__init__(diff_op, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
