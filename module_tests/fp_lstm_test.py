@@ -17,7 +17,10 @@ import gaussian_circle as gc
 import vegas
 import fp_solver as fps
 import derivative as dr
-
+import utility as ut
+import tensorflow_probability as tfp
+tfd = tfp.distributions
+import matplotlib.pyplot as plt
 
 beta = 200.0 
 ens_file = 'data/sde_evolve_test_2d_n_001.h5'
@@ -53,7 +56,7 @@ class DiffOp(tf.keras.layers.Layer):
         return a + b + c + (f_xx + f_yy) / beta
     
 
-solver = fp.FPForget(20, 2, DiffOp, ens_file, domain, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
+solver = fp.FPDGM(20, 3, DiffOp, ens_file, domain, None, sinkhorn_iters=20, sinkhorn_epsilon=0.01, dtype=dtype)
 solver.summary()
 
 
@@ -73,33 +76,114 @@ class CustomDensity(tf.keras.models.Model):
         X = tf.concat([x, y], axis=1)
         return rv.prob(X)
 
-real_density = CustomDensity()
-partials_rd = dr.FirstPartials(real_density.call_2, 2)
-#"""
-domain = 2.5 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
-plotter = pltr.NNPlotter(funcs=[solver], space=domain, num_pts_per_dim=50)
-plotter.plot('images/fp_lstm_before.png')
+class CustomDensity2(tf.keras.models.Model):
+    def __init__(self, dtype=dtype):
+        super().__init__(dtype=dtype)
+        self.c = 17.5937 #5.13038
+        self.num_burnin_steps = 200
+        self.target_log_prob_fn = lambda x: -(tf.reduce_sum(x**2, axis=1) - 1)**2
+        sampler = tfp.mcmc.NoUTurnSampler(target_log_prob_fn=self.target_log_prob_fn, step_size=0.1)
+        self.adaptive_sampler = tfp.mcmc.DualAveragingStepSizeAdaptation(inner_kernel=sampler, num_adaptation_steps=int(0.8 * self.num_burnin_steps),\
+        target_accept_prob=0.75,\
+    # NUTS inside of a TTK requires custom getter/setter functions.
+    step_size_setter_fn=lambda pkr, new_step_size: pkr._replace(inner_results=pkr.inner_results._replace(step_size=new_step_size)\
+        ),\
+    step_size_getter_fn=lambda pkr: pkr.inner_results.step_size,\
+    log_accept_prob_getter_fn=lambda pkr: pkr.inner_results.log_accept_ratio,)
 
-#"""
-ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
-weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-solver.learn_density(ensemble, weights, domain, epochs=350, initial_rate=0.001)
 
+
+    def call(self, x):
+        return tf.exp(-(x[:, 0]**2 + x[:, 1]**2  - 1.0)**2)
+
+    def call_2(self, x, y):
+        return tf.exp(-(x**2 + y**2  - 1.0)**2)
+    
+
+
+
+dims = 10
+true_stddev = tf.sqrt(tf.linspace(1., 3., dims))
+likelihood = tfd.MultivariateNormalDiag(loc=0., scale_diag=true_stddev)
+
+@ut.timer
+@tf.function
+def sample(size):
+    return tfp.mcmc.sample_chain(\
+        num_results=size,\
+        num_burnin_steps=1000,\
+        current_state=tf.zeros(2),\
+        kernel=tfp.mcmc.NoUTurnSampler(\
+        target_log_prob_fn=lambda x: -(x[0]**2 + x[1]**2 - 1.0)**2,\
+        step_size=0.01),\
+        trace_fn=None)
+
+Y = sample(500)
+X =Y.numpy()
+print(X)
+"""
+fig = plt.figure(figsize=(10, 10))
+fig.add_subplot(111)
+plt.scatter(X[:, 0], X[:, 1])
+plt.show()
+#"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+real_density = CustomDensity2()
+
+#partials_rd = dr.FirstPartials(real_density.call_2, 2)
+#"""
+domain = 2.0 * np.array([[-1.0, 1.0], [-1.0, 1.0]])
+plotter = pltr.NNPlotter(funcs=[real_density.call_2], space=domain, num_pts_per_dim=300)
+plotter.plot('images/real.png')
+
+"""
+#ensemble = real_density.sample(200)#tf.convert_to_tensor(rv.sample(size=200), dtype=dtype)
+weights =  np.ones(500)#real_density(Y)
+print(weights)
+solver.learn_density(Y, weights, domain, epochs=200, initial_rate=0.001, p=2)
+Y = sample(500)
+weights =  np.ones(500)#real_density(Y)
+solver.learn_density(Y, weights, domain, epochs=200, initial_rate=0.001, p=2)
+#"""
+region = fps.Domain(domain, dtype)
 for _ in range(2):
-    ensemble = tf.convert_to_tensor(rv.sample(size=1000), dtype=dtype)
+    Y = sample(100)
+    weights =  real_density(Y)
     #weights = tf.convert_to_tensor(rv.pdf(ensemble), dtype=dtype)
-    first_partials, weights = partials_rd(*tf.split(ensemble, 2, axis=1))
-    solver.learn_function(ensemble, weights, epochs=1000, initial_rate=0.001)
+    solver.learn_function(Y, weights, epochs=500, initial_rate=0.001)
     #solver.compute_normalizer(domain)
 
 
-#"""
-ensemble = tf.convert_to_tensor(rv.sample(size=100), dtype=dtype)
-a = tf.reshape(solver(ensemble), (-1))
-b = rv.pdf(ensemble.numpy())
+"""
+"""
+Y = sample(100)
+a = tf.reshape(solver(Y), (-1))
+b = real_density(Y).numpy()
 c = tf.math.abs(a - b)
 print(c)
 print(tf.reduce_mean(c))
-plotter = pltr.NNPlotter(funcs=[solver], space=domain, num_pts_per_dim=50)
-plotter.plot('images/fp_lstm_after.png', wireframe=True)
+#"""
+plotter = pltr.NNPlotter(funcs=[solver.call_2], space=domain, num_pts_per_dim=300)
+plotter.plot('images/fp_lstm_after.png')#, wireframe=True)
 #"""

@@ -91,7 +91,7 @@ class InitialPDF(tf.keras.layers.Layer):
         return tf.math.exp(- 0.5 * tf.reduce_sum(x**2, axis=1, keepdims=True) / self.d ) / self.c
 
 solver = fp.FPDGM(20, 3, [FullDiffOp, SpaceDiffOp], ens_file, domain, InitialPDF().call, sinkhorn_iters=20, sinkhorn_epsilon=0.01,\
-                      name='FP2DGM_2d_n', dtype=dtype)
+                      name='FP2DGM_eq', dtype=dtype)
 solver.summary()
 
 

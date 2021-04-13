@@ -10,6 +10,8 @@ import scipy.stats as ss
 import nn_plotter as pltr
 import math
 import derivative as dr
+from sklearn.neighbors import KernelDensity
+from sklearn.model_selection import GridSearchCV
 
 class Domain:
     def __init__(self, domain, dtype=tf.float64):
@@ -164,7 +166,8 @@ class FPSolver(tf.keras.models.Model):
             #target_first_partials = [partial[j: k] for partial in self.target_first_partials
             self.learn_function(self.curr_ref_pts[j: k], self.target_values[j: k], epochs, initial_rate)
             j, k = j + l, k + l
-        #self.compute_normalizer(domain)
+        if self.current_time > 0:
+            self.maximize_likelihood(self.curr_ref_pts[: self.ensemble_size], self.domain.domain.numpy(), epochs, initial_rate, nitn, neval)
         
 
     @ut.timer
@@ -197,6 +200,78 @@ class FPSolver(tf.keras.models.Model):
             print('current time = {}, prob at 0 = {}'.format(self.current_time, self.call(tf.convert_to_tensor(np.zeros((1, self.dim)), self.dtype))))
             self.save_weights()
             plotter.plot(self.folder + '/time_{}.png'.format(self.current_time), wireframe=True)
+
+    @ut.timer
+    def solve_stationary(self, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
+        self.current_time = self.final_available_time_id - 1
+        self.current_time += 1
+        hdf5_ens = tables.open_file(self.ens_file, 'r+')
+        pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
+        self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
+        l = self.diff_op(self.call_3)
+        ensemble = self.curr_ref_pts[:150] 
+        cost_matrix = tf.convert_to_tensor(ws.compute_cost_matrix(ensemble.numpy(), ensemble.numpy(), p=2), dtype=self.dtype)
+        weights = tf.convert_to_tensor(np.ones(150), dtype=self.dtype)
+        args = tf.split(self.curr_ref_pts, self.dim, axis=1)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        prev_loss = 0.0
+        for epoch in range(epochs):
+            with tf.GradientTape() as tape:
+                loss = tf.reduce_mean(l(*args)**2) + self.loss_S2(ensemble, ensemble, self.call(ensemble), weights, cost_matrix)
+                print('epoch = {}, loss = {:6f}'.format(epoch + 1, loss), end='\r')
+                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
+                    print('Invalid value encountered during computation of Likelihood loss. Exiting training loop ...')
+                    break
+                grads = tape.gradient(loss, self.trainable_weights)
+                optimizer.apply_gradients(zip(grads, self.trainable_weights))
+                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
+                    break
+                else:
+                    prev_loss = loss
+        self.compute_normalizer(self.domain.domain.numpy(), nitn=nitn, neval=neval)
+        self.save_weights()
+
+
+    @ut.timer
+    def solve_stationary_2(self, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
+        self.current_time = self.final_available_time_id - 1
+        self.current_time += 1
+        hdf5_ens = tables.open_file(self.ens_file, 'r+')
+        pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
+        self.curr_ref_pts = tf.convert_to_tensor(pts, dtype=self.dtype)
+        def my_scores(estimator, X):
+            scores = estimator.score_samples(X)
+            # Remove -inf
+            scores = scores[scores != float('-inf')]
+            # Return the mean values
+            return np.mean(scores)
+        kernels = ['cosine', 'epanechnikov', 'exponential', 'gaussian', 'linear', 'tophat']
+        h_vals = np.arange(0.01, 1, .1)
+        grid = GridSearchCV(KernelDensity(),{'bandwidth': h_vals, 'kernel': kernels}, scoring=my_scores)
+        grid.fit(pts)
+        best_kde = grid.best_estimator_
+        ensemble = self.curr_ref_pts[:200] 
+        log_density =  best_kde.score_samples(ensemble.numpy())
+        cost_matrix = tf.convert_to_tensor(ws.compute_cost_matrix(ensemble.numpy(), ensemble.numpy(), p=2), dtype=self.dtype)
+        weights = tf.convert_to_tensor(np.exp(log_density), dtype=self.dtype)
+        args = tf.split(self.curr_ref_pts, self.dim, axis=1)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        prev_loss = 0.0
+        for epoch in range(epochs):
+            with tf.GradientTape() as tape:
+                loss = self.loss_S2(ensemble, ensemble, self.call(ensemble), weights, cost_matrix)
+                print('epoch = {}, loss = {:6f}'.format(epoch + 1, loss), end='\r')
+                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
+                    print('Invalid value encountered during computation of Likelihood loss. Exiting training loop ...')
+                    break
+                grads = tape.gradient(loss, self.trainable_weights)
+                optimizer.apply_gradients(zip(grads, self.trainable_weights))
+                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
+                    break
+                else:
+                    prev_loss = loss
+        self.compute_normalizer(self.domain.domain.numpy(), nitn=nitn, neval=neval)
+        self.save_weights()
 
     
     def loss_S2(self, ensemble_1, ensemble_2, curr_values, target_values, cost_matrix):
@@ -250,7 +325,7 @@ class FPSolver(tf.keras.models.Model):
 
     #@tf.function
     @ut.timer
-    def learn_density(self, ensemble, weights, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
+    def learn_density(self, ensemble, weights, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200, p=2):
         """
         Description:
             attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
@@ -261,7 +336,7 @@ class FPSolver(tf.keras.models.Model):
             nitn: number of Vegas iterations
             neval: number of function evaluations per iteration
         """
-        cost_matrix = tf.convert_to_tensor(ws.compute_cost_matrix(ensemble.numpy(), ensemble.numpy(), p=2), dtype=self.dtype)
+        cost_matrix = tf.convert_to_tensor(ws.compute_cost_matrix(ensemble.numpy(), ensemble.numpy(), p=p), dtype=self.dtype)
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
         prev_loss = 0.0
         for epoch in range(epochs):
@@ -279,6 +354,36 @@ class FPSolver(tf.keras.models.Model):
                     prev_loss = loss
         self.compute_normalizer(domain, nitn=nitn, neval=neval)
   
+
+    #@tf.function
+    @ut.timer
+    def maximize_likelihood(self, ensemble, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200):
+        """
+        Description:
+            attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
+        Args:
+            epochs: number of epochs to train
+            initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
+        """
+        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        prev_loss = 0.0
+        for epoch in range(epochs):
+            with tf.GradientTape() as tape:
+                loss = tf.reduce_mean(-tf.math.log(self.call(ensemble)))
+                print('epoch = {}, Likelihood loss = {:6f}'.format(epoch + 1, loss), end='\r')
+                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
+                    print('Invalid value encountered during computation of Likelihood loss. Exiting training loop ...')
+                    break
+                grads = tape.gradient(loss, self.trainable_weights)
+                optimizer.apply_gradients(zip(grads, self.trainable_weights))
+                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
+                    break
+                else:
+                    prev_loss = loss
+        self.compute_normalizer(domain, nitn=nitn, neval=neval)
 
     @ut.timer
     def learn_function(self, ensemble, values, epochs=100, initial_rate=1e-3):
@@ -368,3 +473,6 @@ class FPSolver(tf.keras.models.Model):
     def call_2(self, *args):
         x = tf.concat(args, axis=1)
         return self.call(x)
+
+    def call_3(self, *args):
+        return -tf.math.log(self.call_2(*args))

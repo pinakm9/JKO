@@ -50,7 +50,7 @@ class SDE:
             # evolve ensemble with Euler-Maruyama
             noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
             for i in range(self.num_particles):
-                new_ensemble[i] += self.mu(step*time_step, new_ensemble[i])*time_step + np.dot(self.sigma(step*time_step, new_ensemble[i]), noise)
+                new_ensemble[i] += self.mu(step*time_step, new_ensemble[i])*time_step + self.sigma(step*time_step, new_ensemble[i]) * noise
             # record the new ensemble
             hdf5.create_array(ens_folder, 'time_' + str(step + 1), new_ensemble)
         # add some extra useful information to the evolution file

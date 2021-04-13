@@ -75,9 +75,9 @@ class FPForget(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, dtype=tf.float64,\
                  name = 'FPForget', save_path=None):
-        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.lstm_layers = [LSTMForgetBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
@@ -113,9 +113,9 @@ class FPPeephole(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, dtype=tf.float64,\
                  name = 'FPPeephole', save_path=None):
-        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.lstm_layers = [LSTMPeepholeBlock(num_nodes, dtype=dtype) for _ in range(num_layers)]
@@ -150,9 +150,9 @@ class FPDGM(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, dtype=tf.float64,\
                  name = 'FPDGM', save_path=None):
-        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)
@@ -185,9 +185,9 @@ class FPVanilla(fp.FPSolver):
         #dtype: tf.float32 or tf.float64
         name: name of the FPSolver network
     """
-    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon=0.01, sinkhorn_iters=100, dtype=tf.float64,\
+    def __init__(self, num_nodes, num_layers, diff_ops, ens_file, domain, init_cond, dtype=tf.float64,\
                  name = 'FPVanilla', save_path=None):
-        super().__init__(diff_ops, ens_file, domain, init_cond, sinkhorn_epsilon, sinkhorn_iters, dtype, name, save_path)
+        super().__init__(diff_ops, ens_file, domain, init_cond, dtype, name, save_path)
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.initial_dense = tf.keras.layers.Dense(units=num_nodes, activation=tf.keras.activations.tanh, dtype=dtype)

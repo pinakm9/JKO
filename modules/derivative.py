@@ -101,3 +101,41 @@ class DiagSecondPartials(tf.keras.layers.Layer):
             first_partials = tape.gradient(f, args)
         second_partials = [outer_tapes[i].gradient(partial, args[i]) for i, partial in enumerate(first_partials)]
         return second_partials, first_partials, f
+
+
+
+class FourthOrderTaylor(tf.keras.layers.Layer):
+    def __init__(self, f, h, dtype=tf.float64):
+        super().__init__(name='Fourth_order_Taylor', dtype=dtype)
+        self.f = f
+        self.h = h
+
+    @tf.function
+    def call(self, t, *args):
+        with tf.GradientTape(persistent=True) as tape:
+            tape.watch(t)
+            f_ = self.f(t, *args)
+            f_t = tape.gradient(f_, t)
+            f_tt = tape.gradient(f_t, t)
+            f_ttt = tape.gradient(f_tt, t)
+        f_tttt = tape.gradient(f_ttt, t)
+        return f_ + self.h*f_t + self.h**2*f_tt/2. + self.h**3*f_ttt/6. + self.h**4*f_tttt/24.
+
+
+class FifthOrderTaylor(tf.keras.layers.Layer):
+    def __init__(self, f, h, dtype=tf.float64):
+        super().__init__(name='Fifth_order_Taylor', dtype=dtype)
+        self.f = f
+        self.h = h
+
+    @tf.function
+    def call(self, t, *args):
+        with tf.GradientTape(persistent=True) as tape:
+            tape.watch(t)
+            f_ = self.f(t, *args)
+            f_t = tape.gradient(f_, t)
+            f_tt = tape.gradient(f_t, t)
+            f_ttt = tape.gradient(f_tt, t)
+            f_tttt = tape.gradient(f_ttt, t)
+        f_ttttt = tape.gradient(f_tttt, t)
+        return f_ + self.h*f_t + self.h**2*f_tt/2. + self.h**3*f_ttt/6. + self.h**4*f_tttt/24. + self.h**5*f_ttttt/120.

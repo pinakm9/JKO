@@ -79,6 +79,9 @@ def sinkhorn_loss(ensemble_1, ensemble_2, weights_1, weights_2, cost_matrix, eps
     """
     weights_1 = tf.reshape(weights_1, (-1))
     weights_2 = tf.reshape(weights_2, (-1))
+    weights_1 /= tf.reduce_sum(weights_1)
+    weights_2 /= tf.reduce_mean(weights_2)
+
     # Elementary operations
     def M(u,v):
         "Modified cost for logarithmic updates"

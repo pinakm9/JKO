@@ -22,7 +22,7 @@ cost_file = 'data/sde_evolve_test_2d_n_cost_2_001.h5'
 dtype = tf.float64
 dimension = 2
 delta = 0.5
-domain = 1.5*np.array([[-1.0, 1.0], [-1.0, 1.0]])
+domain = 2.0*np.array([[-1.0, 1.0], [-1.0, 1.0]])
 
 class DiffOp(tf.keras.layers.Layer):
     def __init__(self, f):
@@ -45,8 +45,8 @@ class DiffOp(tf.keras.layers.Layer):
         f_yy = outer_y.gradient(f_y, y)
         a = (x*z) * f_x
         b = (y*z) * f_y
-        c = 4.0 * (z + 2.0) * f_
-        return a + b + c + (f_xx + f_yy) / beta
+        c = -4.0 * (z + 2.0) 
+        return a + b + c + (f_xx + f_yy - f_x**2 - f_y**2) / beta
 
 class InitialPDF(tf.keras.layers.Layer):
     def __init__(self, dtype=dtype):
@@ -67,7 +67,9 @@ solver = fp.FPDGM(20, 3, DiffOp, ens_file, domain, InitialPDF().call, sinkhorn_i
 solver.summary()
 
 
-solver.solve(100, 0, 600)
-#plotter = pltr.JKOPlotter(funcs=[solver], space=domain, num_pts_per_dim=30)
-#plotter.plot('images/sde_2d_n_sol.png')
+#solver.solve(100, 0, 600)
+#solver.load_weights(time_id=100)
+solver.solve_stationary_2(600)
+plotter = pltr.NNPlotter(funcs=[solver], space=domain, num_pts_per_dim=300)
+plotter.plot('images/stationary_fp.png')
 #plotter.animate('images/sde_2d_n_sol.mp4', t=[0.0, 0.2], num_frames=24)
