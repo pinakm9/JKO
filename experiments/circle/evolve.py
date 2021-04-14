@@ -20,7 +20,7 @@ import equation as eqn
 # create initial ensemle
 dtype = tf.float64
 np_dtype = np.float64
-beta = 10.0
+beta = 20.0
 s = np.sqrt(2.0/beta)
 
 pdf = eqn.InitialPDF()
@@ -38,10 +38,12 @@ def mu(t, X_t):
 
 def sigma(t, X_t):
     return s 
-eqn = sde.SDE(2, mu, sigma, 'data/evolution.h5', dtype=np_dtype)
+
+steps = 1000
+eqn = sde.SDE(2, mu, sigma, 'data/evolution_{}.h5'.format(steps), dtype=np_dtype)
 
 # evolve the ensemble and record the evolution
-eqn.evolve(initial_ensemble.numpy(), initial_probs, initial_first_partials, 1.0, 0.001)
+eqn.evolve(initial_ensemble.numpy(), initial_probs, initial_first_partials, 1.0, 1.0/steps)
 
 # animate the evolution
-sde.SDEPlotter('data/evolution.h5')#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
+sde.SDEPlotter('data/evolution_{}.h5'.format(steps))#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])

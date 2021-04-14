@@ -13,10 +13,10 @@ import tensorflow as tf
 import fp_architecture as fp
 import equation as eqn
 
-ens_file = 'data/evolution.h5'
+ens_file = 'data/evolution_100.h5'
 dtype = tf.float64
 
 domain = 2.0*np.array([[-1., 1.], [-1., 1.]])
 solver = fp.FPDGM(20, 3, eqn.Equation, ens_file, domain, eqn.InitialPDF(dtype=dtype), dtype=dtype)
 solver.summary()
-solver.solve(100, 0, 250)
+solver.solve(1000, 0, 250)

@@ -18,7 +18,7 @@ class Domain:
         self.domain = tf.convert_to_tensor(domain, dtype=dtype)
         
 
-    def sample(self, num_samples, **params):
+    def sample(self, num_samples):
         samples = []
         for d in range(self.dim):
             samples.append(tf.random.uniform(shape=(num_samples, 1), minval=self.domain[d][0], maxval=self.domain[d][1], dtype=self.dtype))
@@ -68,8 +68,8 @@ class FPSolver(tf.keras.models.Model):
         self.current_time = -1
         self.curr_time = -self.time_step * tf.ones((self.ensemble_size, 1), dtype=dtype)
         self.normalizer = Normalizer(dtype=dtype)
-        self.eqn = eqn(self._log_call, dtype=dtype)
-        self.taylor = dr.FourthOrderTaylor(self.call, self.time_step, dtype)
+        self.eqn = eqn(self._log_call)
+        self.taylor = dr.FifthOrderTaylor(self.call, self.time_step)
         self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
         try:
             os.mkdir(self.folder)
@@ -104,9 +104,10 @@ class FPSolver(tf.keras.models.Model):
         pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
         self.curr_ref_pts = tf.split(pts, self.dim, axis=1)
         pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time + 1)).read()
-        self.next_ref_pts = tf.split(pts, self.dim, axis=1)
+        self.next_ref_pts = tf.split(pts, self.dim, axis=1) #self.domain.sample(self.ensemble_size)#
         # generate data for training
         if self.current_time > 0:
+            self.taylor.f = self.call
             self.target_values = self.taylor(self.curr_time - self.time_step, *self.curr_ref_pts)
         else:
             self.target_values = self.init_cond(*self.curr_ref_pts)
@@ -129,7 +130,7 @@ class FPSolver(tf.keras.models.Model):
         prev_loss = 0.0
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
-                loss =  self.equality_loss() + self.equation_loss() 
+                loss =  self.equality_loss() + self.equation_loss()
                 print('epoch = {}, loss = {:6f}'.format(epoch + 1, loss), end='\r')
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
                     print('Invalid value encountered during computation of loss. Exiting training loop ...')
@@ -165,14 +166,13 @@ class FPSolver(tf.keras.models.Model):
             final_time_id = min(self.final_available_time_id - 1, final_time_id)
         plotter = pltr.NNPlotter(funcs=[self], space=self.domain.domain.numpy(), num_pts_per_dim=300)
         self.current_time = initial_time_id - 1
-        if self.current_time >= 0:
-            self.load_weights(time_id=self.current_time)
         x = tf.zeros((1, 1), dtype=self.dtype)
         args = [x for _ in range(self.dim)]
+        self.save_weights('random')
         for i in range(final_time_id + 1):
             self.prepare()
             if i == 0:
-                for _ in range(10):
+                for _ in range(int(10000/epochs_per_step)):
                     self.update(epochs=epochs_per_step, initial_rate=initial_rate)
             else:
                 self.update(epochs=epochs_per_step, initial_rate=initial_rate)
@@ -180,6 +180,7 @@ class FPSolver(tf.keras.models.Model):
             print('learning done for time = {}, prob at origin = {}'.format(self.current_time, self.call(t, *args)))
             self.save_weights()
             plotter.plot(self.folder + '/time_{}.png'.format(self.current_time), self.current_time*self.time_step, wireframe=True)
+            #self.load_weights('random')
 
     def equality_loss(self):
         """
@@ -190,23 +191,44 @@ class FPSolver(tf.keras.models.Model):
 
 
     def equation_loss(self):
-        curr_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.curr_ref_pts)))
-        next_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.next_ref_pts))) 
-        return curr_loss + next_loss
+        next_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.next_ref_pts)))
+        t = tf.reshape(tf.linspace(tf.cast(0.0, dtype=self.dtype), self.time_step, self.ensemble_size), (-1, 1))
+        pts = self.domain.sample(self.ensemble_size)
+        self.eqn.f = self._log_call
+        random_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time + t, *pts))) 
+        return next_loss + random_loss
 
-    
 
-
+    #@tf.function
     @ut.timer
-    def learn_function(self, epochs, initial_rate, values, t, *args):
+    def learn_density(self, ensemble, weights, domain, epochs=100, initial_rate=1e-3, nitn=10, neval=200, p=2):
         """
         Description:
-            attempts to learn a function from its values and first partial derivatives
+            attempts to learn the initial condition with Wasserstein_2 loss using the initial ensemble
         Args:
             epochs: number of epochs to train
             initial_rate: initial learning rate
+            domain: box domain over which to compute the normalizing constant
+            nitn: number of Vegas iterations
+            neval: number of function evaluations per iteration
         """
-        
+        cost_matrix = tf.convert_to_tensor(ws.compute_cost_matrix(ensemble.numpy(), ensemble.numpy(), p=p), dtype=self.dtype)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
+        prev_loss = 0.0
+        for epoch in range(epochs):
+            with tf.GradientTape() as tape:
+                loss = self.loss_S2(ensemble, ensemble, self.call(ensemble), weights, cost_matrix)
+                print('epoch = {}, Sinkhorn loss = {:6f}'.format(epoch + 1, loss), end='\r')
+                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
+                    print('Invalid value encountered during computation of Sinkhorn loss. Exiting training loop ...')
+                    break
+                grads = tape.gradient(loss, self.trainable_weights)
+                optimizer.apply_gradients(zip(grads, self.trainable_weights))
+                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
+                    break
+                else:
+                    prev_loss = loss
+        self.compute_normalizer(domain, nitn=nitn, neval=neval)
 
 
     def compute_normalizer(self, t, domain, nitn=10, neval=200):
