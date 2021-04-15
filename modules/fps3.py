@@ -181,7 +181,7 @@ class FPSolver(tf.keras.models.Model):
         Description:
             computes the Equality loss
         """
-        return tf.reduce_mean(tf.math.square(self.call(*self.curr_ref_pts) - self.target_values))
+        return tf.reduce_mean(tf.math.abs(self.call(*self.curr_ref_pts) - self.target_values))
 
 
 
