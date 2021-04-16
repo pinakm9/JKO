@@ -57,7 +57,7 @@ class FPSolver(tf.keras.models.Model):
         name: name of the FPSolver network
         save_path: path to the directory where a new folder of the same name as the network will be created for storing weights and biases 
     """
-    def __init__(self, taylor, ens_file, domain, init_cond, dtype=tf.float64, name = 'FPSolver', save_path=None):
+    def __init__(self, taylor, correction, ens_file, domain, init_cond, dtype=tf.float64, name = 'FPSolver', save_path=None):
         super().__init__(name=name, dtype=dtype)
         self.ens_file = ens_file
         self.domain = Domain(domain, dtype=dtype)
@@ -68,6 +68,7 @@ class FPSolver(tf.keras.models.Model):
         self.current_time = -1
         self.normalizer = Normalizer(dtype=dtype)
         self.taylor = taylor(self.call, self.time_step)
+        self.correction = correction(self.call)
         self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
         try:
             os.mkdir(self.folder)
@@ -122,20 +123,16 @@ class FPSolver(tf.keras.models.Model):
             neval: number of function evaluations per iteration
         """
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        prev_loss = 0.0
         for epoch in range(epochs):
+            self.correction.f = self.call
             with tf.GradientTape() as tape:
                 loss =  self.equality_loss()
-                print('epoch = {}, loss = {:6f}'.format(epoch + 1, loss), end='\r')
+                print('epoch = {}, loss = {}'.format(epoch + 1, loss), end='\r')
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
                     print('Invalid value encountered during computation of loss. Exiting training loop ...')
                     break
-                grads = tape.gradient(loss, self.trainable_weights)
-                optimizer.apply_gradients(zip(grads, self.trainable_weights))
-                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
-                    break
-                else:
-                    prev_loss = loss
+            grads = tape.gradient(loss, self.trainable_weights)
+            optimizer.apply_gradients(zip(grads, self.trainable_weights))
     
         
 
@@ -162,7 +159,8 @@ class FPSolver(tf.keras.models.Model):
         plotter = pltr.NNPlotter(funcs=[self], space=self.domain.domain.numpy(), num_pts_per_dim=300)
         self.current_time = initial_time_id - 1
         x = tf.zeros((1, 1), dtype=self.dtype)
-        args = [x for _ in range(self.dim)]
+        y = tf.ones((1, 1), dtype=self.dtype)
+        args = [x, y] #[x for _ in range(self.dim)]
         self.save_weights('random')
         for i in range(final_time_id + 1):
             self.prepare()
@@ -181,7 +179,8 @@ class FPSolver(tf.keras.models.Model):
         Description:
             computes the Equality loss
         """
-        return tf.reduce_mean(tf.math.abs(self.call(*self.curr_ref_pts) - self.target_values))
+        return tf.reduce_mean(tf.math.square(self.call(*self.curr_ref_pts) - self.target_values)) +\
+               tf.reduce_mean(tf.math.square(self.correction(*self.curr_ref_pts)))
 
 
 

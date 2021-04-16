@@ -17,6 +17,6 @@ ens_file = 'data/evolution_1000.h5'
 dtype = tf.float64
 
 domain = 2.0*np.array([[-1., 1.], [-1., 1.]])
-solver = fp.FPDGM(20, 3, eqn.ThirdSpaceTaylor, ens_file, domain, eqn.InitialPDF(dtype=dtype), dtype=dtype)
+solver = fp.FPDGM(20, 2, eqn.ThirdSpaceTaylor, eqn.RadialSymmetry, ens_file, domain, eqn.InitialPDF(dtype=dtype), dtype=dtype, name='FPDGM_2_20_rad')
 #solver.summary()
 solver.solve(1000, 0, 400)

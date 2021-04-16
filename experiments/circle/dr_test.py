@@ -20,7 +20,7 @@ dtype = tf.float64
 beta = 10.0
 
 domain = 2.0*np.array([[-1., 1.], [-1., 1.]])
-nn = fp.FPDGM(20, 3, eqn.Equation, ens_file, domain, eqn.InitialPDF())
+nn = fp.FPDGM(20, 2, eqn.Equation, ens_file, domain, eqn.InitialPDF())
 nn.summary()
 
 
@@ -110,7 +110,13 @@ class FourthTaylor():
             LLLf_ = a*LLf_x + b*LLf_y + c + (LLf_xx + LLf_yy - LLf_x**2 - LLf_y**2) / beta
             #print('LLLf_', LLLf_)
 
-        return f_ + self.h*Lf_ + self.h**2*LLf_/2. + self.h**3*LLLf_/6. 
+            LLLf_x, LLLf_y = tape.gradient(LLLf_, [x, y])
+            LLLf_xx = tape.gradient(LLLf_x, x)
+            LLLf_yy = tape.gradient(LLLf_y, y)
+            LLLLf_ = a*LLLf_x + b*LLLf_y + c + (LLLf_xx + LLLf_yy - LLLf_x**2 - LLLf_y**2) / beta
+            #print('LLLf_', LLLf_)
+
+        return f_ + self.h*Lf_ + self.h**2*LLf_/2. + self.h**3*LLLf_/6. + self.h**4*LLLLf_/24.
 #"""
 h = 0.01         
 op = FourthTaylor(nn, h)

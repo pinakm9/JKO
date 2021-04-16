@@ -83,3 +83,13 @@ class ThirdSpaceTaylor():
         return f_ + self.h*Lf_ + self.h**2*LLf_/2. + self.h**3*LLLf_/6. 
 
 
+class RadialSymmetry():
+    def __init__(self, f):
+        self.f = f
+
+    def __call__(self, x, y):
+        with tf.GradientTape(watch_accessed_variables=False) as tape:
+            tape.watch([x, y])
+            f_ = self.f(x, y)
+        f_x, f_y = tape.gradient(f_, [x, y])
+        return y*f_x - x*f_y
