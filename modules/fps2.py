@@ -10,7 +10,7 @@ import scipy.stats as ss
 import nn_plotter as pltr
 import math
 import derivative as dr
-
+tf.config.experimental_run_functions_eagerly(True)
 class Domain:
     def __init__(self, domain, dtype=tf.float64):
         self.dtype = dtype
@@ -57,7 +57,7 @@ class FPSolver(tf.keras.models.Model):
         name: name of the FPSolver network
         save_path: path to the directory where a new folder of the same name as the network will be created for storing weights and biases 
     """
-    def __init__(self, eqn, ens_file, domain, init_cond, dtype=tf.float64, name = 'FPSolver', save_path=None):
+    def __init__(self, eqn, taylor, ens_file, domain, init_cond, dtype=tf.float64, name = 'FPSolver', save_path=None):
         super().__init__(name=name, dtype=dtype)
         self.ens_file = ens_file
         self.domain = Domain(domain, dtype=dtype)
@@ -68,8 +68,8 @@ class FPSolver(tf.keras.models.Model):
         self.current_time = -1
         self.curr_time = -self.time_step * tf.ones((self.ensemble_size, 1), dtype=dtype)
         self.normalizer = Normalizer(dtype=dtype)
-        self.eqn = eqn(self._log_call)
-        self.taylor = dr.FifthOrderTaylor(self.call, self.time_step)
+        self.eqn = eqn(self.call)
+        self.taylor = taylor(self.call, self.time_step)
         self.folder = '{}/'.format(save_path) if save_path is not None else '' + '{}'.format(self.name)
         try:
             os.mkdir(self.folder)
@@ -115,6 +115,7 @@ class FPSolver(tf.keras.models.Model):
 
 
     @ut.timer
+    #@tf.function
     def update(self, epochs=100, initial_rate=1e-3):
         """
         Description:
@@ -127,21 +128,13 @@ class FPSolver(tf.keras.models.Model):
             neval: number of function evaluations per iteration
         """
         optimizer = tf.keras.optimizers.Adam(learning_rate=initial_rate)
-        prev_loss = 0.0
         for epoch in range(epochs):
             with tf.GradientTape() as tape:
                 loss =  self.equality_loss() + self.equation_loss()
-                print('epoch = {}, loss = {:6f}'.format(epoch + 1, loss), end='\r')
-                if tf.math.is_nan(loss) or tf.math.is_inf(loss):
-                    print('Invalid value encountered during computation of loss. Exiting training loop ...')
-                    break
-                grads = tape.gradient(loss, self.trainable_weights)
-                optimizer.apply_gradients(zip(grads, self.trainable_weights))
-                if tf.math.abs(loss - prev_loss).numpy() < 1e-9:
-                    break
-                else:
-                    prev_loss = loss
-    
+                print('epoch = {}, loss = {}'.format(epoch + 1, loss), end='\r')
+            grads = tape.gradient(loss, self.trainable_weights)
+            optimizer.apply_gradients(zip(grads, self.trainable_weights))
+            self.eqn.f = self.call
         
 
     @ut.timer
@@ -172,7 +165,7 @@ class FPSolver(tf.keras.models.Model):
         for i in range(final_time_id + 1):
             self.prepare()
             if i == 0:
-                for _ in range(int(10000/epochs_per_step)):
+                for _ in range(int(2000/epochs_per_step)):
                     self.update(epochs=epochs_per_step, initial_rate=initial_rate)
             else:
                 self.update(epochs=epochs_per_step, initial_rate=initial_rate)
@@ -191,13 +184,17 @@ class FPSolver(tf.keras.models.Model):
 
 
     def equation_loss(self):
-        next_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.next_ref_pts)))
-        t = tf.reshape(tf.linspace(tf.cast(0.0, dtype=self.dtype), self.time_step, self.ensemble_size), (-1, 1))
-        pts = self.domain.sample(self.ensemble_size)
-        self.eqn.f = self._log_call
-        random_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time + t, *pts))) 
-        return next_loss + random_loss
+        #next_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.next_ref_pts)))
+        #t = tf.reshape(tf.linspace(tf.cast(0.0, dtype=self.dtype), self.time_step, self.ensemble_size), (-1, 1))
+        #pts = self.domain.sample(self.ensemble_size)
+        #self.eqn.f = self._log_call
+        #curr_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.curr_ref_pts)))
+        next_loss = tf.reduce_mean(tf.math.square(self.eqn(self.curr_time, *self.next_ref_pts))) 
+        l = 1.0 if self.current_time > 0 else 0.01
+        return  l * next_loss
 
+    def integral_loss(self):
+        
 
     #@tf.function
     @ut.timer

@@ -40,10 +40,10 @@ def sigma(t, X_t):
     return s 
 
 steps = 1000
-eqn = sde.SDE(2, mu, sigma, 'data/evolution_{}.h5'.format(steps), dtype=np_dtype)
+eqn = sde.SDE(2, mu, sigma, 'data/evolution_{}_helper.h5'.format(steps), dtype=np_dtype)
 
 # evolve the ensemble and record the evolution
 eqn.evolve(initial_ensemble.numpy(), initial_probs, initial_first_partials, 1.0, 1.0/steps)
 
 # animate the evolution
-sde.SDEPlotter('data/evolution_{}.h5'.format(steps))#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
+sde.SDEPlotter('data/evolution_{}_helper.h5'.format(steps))#, ax_lims=[(-1.5, 1.5), (-1.5, 1.5)])
