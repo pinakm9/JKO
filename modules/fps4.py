@@ -88,7 +88,9 @@ class FPSolver(tf.keras.models.Model):
         self.taylor(*args)
         self.init_cond(*args[:])
         super().summary()
-        
+
+    def __summary__(self):
+        super().summary()        
 
     @ut.timer
     def prepare(self):
@@ -98,26 +100,35 @@ class FPSolver(tf.keras.models.Model):
         """
         # update the clock
         self.current_time += 1
-        #if self.current_time > 0:
-        #    self.prev_ref_pts = copy.deepcopy(self.curr_ref_pts)
+        if self.current_time > 0:
+            self.prev_ref_pts = copy.deepcopy(self.curr_ref_pts)
         hdf5_ens = tables.open_file(self.ens_file, 'r+')
         pts = getattr(hdf5_ens.root.ensemble, 'time_' + str(self.current_time)).read()
         self.curr_ref_pts = tf.split(pts, self.dim, axis=1)
-        hdf5_ens_helper = tables.open_file(self.ens_file[:-3] + '_helper.h5' , 'r')
-        pts = getattr(hdf5_ens_helper.root.ensemble, 'time_' + str(self.current_time)).read()
-        self.curr_intg_pts = tf.split(pts, self.dim, axis=1)
+        
         # generate data for training
         if self.current_time > 0:
             self.taylor.f = self.call
-            #self.prev_target_values = copy.deepcopy(self.target_values)
+            self.prev_target_values = copy.deepcopy(self.target_values)
             self.target_values = self.taylor(*self.curr_ref_pts)
            
         else:
             self.target_values = self.init_cond(*self.curr_ref_pts)
-        hdf5_ens.close()
-        hdf5_ens_helper.close()
-        #self.numerator = self.init_cond(*self.curr_intg_pts)
+            self.prev_ref_pts = copy.deepcopy(self.curr_ref_pts)
+            self.prev_target_values = copy.deepcopy(self.target_values)
 
+        hdf5_ens.close()
+        """
+        #self.numerator = self.init_cond(*self.curr_intg_pts)
+        if self.current_time % 5 == 4:
+            hdf5_ens_helper = tables.open_file(self.ens_file[:-3] + '_helper.h5' , 'r')
+            pts = getattr(hdf5_ens_helper.root.ensemble, 'time_' + str(self.current_time - 4)).read()
+            self.curr_intg_pts = tf.split(pts, self.dim, axis=1)
+            self.load_weights(self.current_time - 4)
+            self.denom = self.call(*self.curr_intg_pts)
+            self.load_weights(self.current_time - 1)
+            hdf5_ens_helper.close()
+        """
 
     @ut.timer
     def update(self, epochs=100, initial_rate=1e-3):
@@ -135,7 +146,7 @@ class FPSolver(tf.keras.models.Model):
         for epoch in range(epochs):
             self.correction.f = self.call
             with tf.GradientTape() as tape:
-                loss =  self.equality_loss() + self.correct()
+                loss =  self.equality_loss() 
                 print('epoch = {}, loss = {}'.format(epoch + 1, loss), end='\r')
                 if tf.math.is_nan(loss) or tf.math.is_inf(loss):
                     print('Invalid value encountered during computation of loss. Exiting training loop ...')
@@ -188,16 +199,14 @@ class FPSolver(tf.keras.models.Model):
         Description:
             computes the Equality loss
         """
-        w = self.call(*self.curr_ref_pts)
-        return tf.reduce_mean(tf.math.square(w - self.target_values))
+        integ_correction = 0.001 * tf.math.square(tf.reduce_mean(self.call(*self.prev_ref_pts) / self.prev_target_values) - 1.0)
+        return tf.reduce_mean(tf.math.square(self.call(*self.curr_ref_pts) - self.target_values)) +\
+               tf.reduce_mean(tf.math.square(self.correction(*self.curr_ref_pts))) +\
+               integ_correction
 
     def correct(self):
-        if self.current_time % 5 == 1:
-            self.load_weights(self.current_time - 5)
-            p = self.call(*self.curr_intg_pts)
-            self.load_weights(self.current_time - 1)
-            q = self.call(*self.curr_intg_pts)
-            return (tf.reduce_mean(p/q) - 1.)**2 
+        if self.current_time % 5 == 4:
+            return (tf.reduce_mean(self.call(*self.curr_intg_pts)/self.denom) - 1.)**2 
         else:
             return 0.
 

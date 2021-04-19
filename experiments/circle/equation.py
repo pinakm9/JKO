@@ -73,10 +73,10 @@ class ThirdSpaceTaylor():
             #print('LLf_', LLf_)
 
             LLf_x, LLf_y = tape.gradient(LLf_, [x, y])
-            LLf_xx = tape.gradient(LLf_x, x)
-            LLf_yy = tape.gradient(LLf_y, y)
-            LLLf_ = a*LLf_x + b*LLf_y + c*LLf_ + (LLf_xx + LLf_yy) / beta
-            #print('LLLf_', LLLf_)
+        LLf_xx = tape.gradient(LLf_x, x)
+        LLf_yy = tape.gradient(LLf_y, y)
+        LLLf_ = a*LLf_x + b*LLf_y + c*LLf_ + (LLf_xx + LLf_yy) / beta
+        #print('LLLf_', LLLf_)
 
         return f_ + self.h*Lf_ + self.h**2*LLf_/2. + self.h**3*LLLf_/6. 
 
@@ -109,9 +109,9 @@ class ThirdOrderTaylor():
             LLf_ = a*Lf_x + b*Lf_y + c*Lf_ + (Lf_xx + Lf_yy) / beta
 
             LLf_x, LLf_y = tape.gradient(LLf_, [x, y])
-            LLf_xx = tape.gradient(LLf_x, x)
-            LLf_yy = tape.gradient(LLf_y, y)
-            LLLf_ = a*LLf_x + b*LLf_y + c*LLf_ + (LLf_xx + LLf_yy) / beta
+        LLf_xx = tape.gradient(LLf_x, x)
+        LLf_yy = tape.gradient(LLf_y, y)
+        LLLf_ = a*LLf_x + b*LLf_y + c*LLf_ + (LLf_xx + LLf_yy) / beta
 
         return f_ + self.h*Lf_ + self.h**2*LLf_/2. + self.h**3*LLLf_/6.
 
