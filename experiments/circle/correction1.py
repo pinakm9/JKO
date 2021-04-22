@@ -20,7 +20,7 @@ ens_file = 'data/evolution_1000.h5'
 dtype = tf.float64
 
 domain = 2.0*np.array([[-1., 1.], [-1., 1.]])
-solver = fp.FPDGM(20, 3, eqn.ThirdSpaceTaylor, ens_file, domain, eqn.InitialPDF(dtype=dtype), dtype=dtype, name='FPDGM_3_20')
+solver = fp.FPDGM(20, 3, eqn.ThirdSpaceTaylor, eqn.RadialSymmetry, ens_file, domain, eqn.InitialPDF(), name='FPDGM_3_20')
 solver.load_weights(time_id=400)
 t = 400
 
@@ -47,7 +47,7 @@ for epoch in range(500):
         #l1 = tf.reduce_mean(tf.math.square(solver(*e1)-target_values))
         #l2 = tf.reduce_mean(tf.math.square(solver(*e2)-target_values))
         #l3 = tf.reduce_mean(tf.math.square(solver(*e3)-target_values))
-        loss = l0 + tf.reduce_mean(radial(x, y)**2)#-0.5*tf.reduce_mean(tf.math.log(solver(*tf_ensemble))) + 0.1*integ
+        loss = 0.9*l0 - tf.reduce_mean(tf.math.log(solver(*tf_ensemble))) #+ 0.1*integ
         print('epoch = {}, loss = {:6f}'.format(epoch + 1, loss), end='\r')
         if tf.math.is_nan(loss) or tf.math.is_inf(loss):
             print('Invalid value encountered during computation of loss. Exiting training loop ...')

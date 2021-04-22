@@ -43,6 +43,22 @@ class InitialPDF():
         return tf.math.exp(- 0.5 * (x**2 + y**2) / self.d ) / self.c
 
 
+
+
+class InitialPDF2():
+    def __init__(self, dtype=tf.float64):
+        self.dtype = dtype
+        self.deltas = [delta/3.0 , delta, delta/2.0]
+        self.cs = [tf.cast(tf.math.sqrt((2.0 * np.pi * d) ** 2), dtype=dtype) for d in self.deltas]
+        self.ds = [tf.cast(d**2, dtype=dtype) for d in self.deltas]
+    def sample(self, size):
+        return tf.convert_to_tensor(np.random.multivariate_normal(mean=mean, cov=cov, size=size), dtype=self.dtype)
+    def __call__(self, x, y):
+        return (1./3.) * tf.math.exp(- 0.5 * ((x+0.5)**2 + y**2) / self.ds[0] ) / self.cs[0] +\
+               (1./3.) * tf.math.exp(- 0.5 * (x**2 + y**2) / self.ds[1] ) / self.cs[1] +\
+               (1./3.) * tf.math.exp(- 0.5 * ((x-0.5)**2 + y**2) / self.ds[2] ) / self.cs[2]
+
+
 class ThirdSpaceTaylor():
     def __init__(self, f, h):
         self.f = f
