@@ -113,7 +113,8 @@ class FPSolver(tf.keras.models.Model):
             self.target_values = self.taylor(*self.domain_pts)
            
         else:
-            self.target_values = self.init_cond(*self.domain_pts)
+            self.target_values = self.init_cond(*self.curr_ref_pts)#self.init_cond(*self.domain_pts)
+            self.domain_pts = copy.deepcopy(self.curr_ref_pts)
             self.prev_ref_pts = copy.deepcopy(self.curr_ref_pts)
             self.prev_target_values = self.call(*self.prev_ref_pts)
 
@@ -172,24 +173,27 @@ class FPSolver(tf.keras.models.Model):
             neval: number of function evaluations per iteration
             
         """
+        """
         if final_time_id is None:
             final_time_id = self.final_available_time_id - 1
         else:
             final_time_id = min(self.final_available_time_id - 1, final_time_id)
+        """
         plotter = pltr.NNPlotter(funcs=[self], space=self.domain.domain.numpy(), num_pts_per_dim=300)
         self.current_time = initial_time_id - 1
         x = tf.zeros((1, 1), dtype=self.dtype)
         y = tf.ones((1, 1), dtype=self.dtype)
         args = [x, y] #[x for _ in range(self.dim)]
-        self.save_weights('random')
-        for i in range(final_time_id + 1):
+        if initial_time_id != 0:
+            self.load_weights(initial_time_id - 1)
+        for i in range(initial_time_id, final_time_id + 1, 1):
             self.prepare()
             if i == 0:
-                for _ in range(int(2000/epochs_per_step)):
+                for _ in range(int(4000/epochs_per_step)):
                     self.update(epochs=epochs_per_step, initial_rate=initial_rate)
             else:
                 self.update(epochs=epochs_per_step, initial_rate=initial_rate)
-            print('learning done for time = {}, prob at origin = {}'.format(self.current_time, self.call(*args)))
+            print('learning done for time = {}, prob at attractor = {}'.format(self.current_time, self.call(*args)))
             self.save_weights()
             plotter.plot(self.folder + '/time_{}.png'.format(self.current_time), wireframe=True)
             #self.load_weights('random')
@@ -199,7 +203,7 @@ class FPSolver(tf.keras.models.Model):
         Description:
             computes the Equality loss
         """
-        integ_correction = 0.001 * tf.math.square(tf.reduce_mean(self.call(*self.prev_ref_pts) / self.prev_target_values) - 1.0)
+        integ_correction = 0. if self.current_time ==0 else 0.001 * tf.math.square(tf.reduce_mean(self.call(*self.prev_ref_pts) / self.prev_target_values) - 1.0)
         return tf.reduce_mean(tf.math.square(self.call(*self.domain_pts) - self.target_values)) +\
                integ_correction #tf.reduce_mean(tf.math.square(self.correction(*self.curr_ref_pts))) +- 0.001*tf.reduce_mean(self.call(*self.curr_ref_pts))\
                

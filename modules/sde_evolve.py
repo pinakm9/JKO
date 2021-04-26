@@ -37,15 +37,15 @@ class SDE:
         noise_std = np.sqrt(time_step)
         hdf5 = tables.open_file(self.record_path, 'w')
         ens_folder = hdf5.create_group(hdf5.root, 'ensemble')
-        prob_folder = hdf5.create_group(hdf5.root, 'probabilities')
-        hdf5.create_group(hdf5.root, 'first_partials')
+        #prob_folder = hdf5.create_group(hdf5.root, 'probabilities')
+        #hdf5.create_group(hdf5.root, 'first_partials')
         new_ensemble = initial_ensemble#np.zeros((self.num_particles, self.space_dim))
         # record the initial ensemble
         hdf5.create_array(ens_folder, 'time_0', initial_ensemble)
-        hdf5.create_array(prob_folder, 'time_0', initial_probs)
-        for d in range(self.space_dim):
-            folder = hdf5.create_group(hdf5.root.first_partials, 'x_' + str(d))
-            hdf5.create_array(folder, 'time_0', initial_first_partials[d])
+        #hdf5.create_array(prob_folder, 'time_0', initial_probs)
+        #for d in range(self.space_dim):
+        #    folder = hdf5.create_group(hdf5.root.first_partials, 'x_' + str(d))
+        #    hdf5.create_array(folder, 'time_0', initial_first_partials[d])
         for step in range(num_steps):
             # evolve ensemble with Euler-Maruyama
             noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
@@ -68,6 +68,25 @@ class SDE:
         config.append()
         tbl.flush()
         hdf5.close()
+
+    def extend(self, final_time):
+        hdf5 = tables.open_file(self.record_path, 'r+')
+        self.final_available_time_id, self.time_step, self.num_particles, _ = hdf5.root.config.read()[0]
+        #self.time_step = float(self.time_step)
+        num_steps = int((final_time - int(self.final_available_time_id) * self.time_step)/ self.time_step) + 1
+        noise_std = np.sqrt(self.time_step)
+        new_ensemble = getattr(hdf5.root.ensemble, 'time_' + str(self.final_available_time_id)).read()
+        for step in range(num_steps):
+            print('working on step #{} ...'.format(step))
+            # evolve ensemble with Euler-Maruyama
+            noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
+            for i in range(self.num_particles):
+                new_ensemble[i] += self.mu(step*self.time_step, new_ensemble[i])*self.time_step + self.sigma(step*self.time_step, new_ensemble[i]) * noise
+            # record the new ensemble
+            hdf5.create_array(hdf5.root.ensemble, 'time_' + str(self.final_available_time_id + step + 1), new_ensemble)
+        hdf5.close()
+
+
 
 class SDEPlotter:
     """

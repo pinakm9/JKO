@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import copy
+import tensorflow_probability as tfp
 
 beta = 20.0
 
@@ -48,15 +49,125 @@ class InitialPDF():
 class InitialPDF2():
     def __init__(self, dtype=tf.float64):
         self.dtype = dtype
-        self.deltas = [delta/3.0 , delta, delta/2.0]
+        self.num_modes = 9
+        self.deltas = [delta/5.0] * self.num_modes
         self.cs = [tf.cast(tf.math.sqrt((2.0 * np.pi * d) ** 2), dtype=dtype) for d in self.deltas]
         self.ds = [tf.cast(d**2, dtype=dtype) for d in self.deltas]
+        self.means = 0.5*np.array([[-1., 0.], [0., 0.], [1., 0.], [0., 1.], [0., -1.], [-1., 1.], [1., 1.], [1., -1.], [-1., -1.]])
+    
     def sample(self, size):
-        return tf.convert_to_tensor(np.random.multivariate_normal(mean=mean, cov=cov, size=size), dtype=self.dtype)
+        samples = np.zeros((size, 2))
+        idx = np.random.choice(self.num_modes, size=size, replace=True)
+        identity = np.identity(2)
+        for i in range(size):
+            samples[i, :] = np.random.multivariate_normal(mean=self.means[idx[i]], cov=self.deltas[idx[i]] * identity, size=1)
+        return tf.convert_to_tensor(samples, dtype=self.dtype)
+
     def __call__(self, x, y):
-        return (1./3.) * tf.math.exp(- 0.5 * ((x+0.5)**2 + y**2) / self.ds[0] ) / self.cs[0] +\
-               (1./3.) * tf.math.exp(- 0.5 * (x**2 + y**2) / self.ds[1] ) / self.cs[1] +\
-               (1./3.) * tf.math.exp(- 0.5 * ((x-0.5)**2 + y**2) / self.ds[2] ) / self.cs[2]
+        prob = 0.
+        for i in range(self.num_modes):
+            prob += (1./self.num_modes) * tf.math.exp(- 0.5 * ((x-self.means[i][0])**2 + (y-self.means[i][1])**2) / self.ds[i] ) / self.cs[i]
+        return prob
+
+
+
+class InitialPDF3():
+    def __init__(self, dtype=tf.float64):
+        self.dtype = dtype
+        self.num_modes = 2
+        self.deltas = [delta/5.0] * self.num_modes
+        self.cs = [tf.cast(tf.math.sqrt((2.0 * np.pi * d) ** 2), dtype=dtype) for d in self.deltas]
+        self.ds = [tf.cast(d**2, dtype=dtype) for d in self.deltas]
+        self.means = 0.5 * np.array([[0.0, 1.0], [1.0, 0.0]])
+    
+    def sample(self, size):
+        samples = np.zeros((size, 2))
+        idx = np.random.choice(self.num_modes, size=size, replace=True)
+        identity = np.identity(2)
+        for i in range(size):
+            samples[i, :] = np.random.multivariate_normal(mean=self.means[idx[i]], cov=self.deltas[idx[i]] * identity, size=1)
+        return tf.convert_to_tensor(samples, dtype=self.dtype)
+
+    def __call__(self, x, y):
+        prob = 0.
+        for i in range(self.num_modes):
+            prob += (1./self.num_modes) * tf.math.exp(- 0.5 * ((x-self.means[i][0])**2 + (y-self.means[i][1])**2) / self.ds[i] ) / self.cs[i]
+        return prob
+
+
+
+class InitialPDF4():
+    def __init__(self, dtype=tf.float64):
+        self.dtype = dtype
+        self.num_modes = 1
+        self.deltas = [0.3, 0.5] 
+        self.c = tf.cast(2.0 * np.pi * 0.3 * 0.5, dtype=dtype)
+        self.means = np.array([[0., 0.5]])
+    
+    def sample(self, size):
+        cov = np.array([[0.3**2, 0.], [0., 0.5**2]])
+        samples = np.random.multivariate_normal(mean=[0.0, 0.5], cov=cov, size=size)
+        return tf.convert_to_tensor(samples, dtype=self.dtype)
+
+    def __call__(self, x, y):
+        return tf.math.exp(- 0.5 * ((x-0.0)**2/0.3**2 + (y-0.5)**2/0.5**2)) / self.c
+
+
+class GaussianCircle:
+    """
+    Description:
+        creates a multimodal distribution aranged on a circle uniformly using iid Gaussians
+    Args:
+        mean: mean for each Gaussian distribution
+        cov: covarinace matrix for each Gaussian distribution
+        weights: a 1d array
+    """
+    def __init__(self, cov, weights, dtype=tf.float64):
+        self.cov = cov 
+        self.weights = weights / weights.sum()
+        self.num_modes = len(weights)
+        self.dim = cov.shape[0]
+        self.means = np.zeros((self.num_modes, self.dim))
+        angle = 2.0 * np.pi / self.num_modes
+        self.tf_probs = []
+        scale_tril = tf.linalg.cholesky(cov)
+        for i in range(self.num_modes):
+            self.means[i, :2] = np.cos(i * angle), np.sin(i * angle)
+            self.tf_probs.append(tfp.distributions.MultivariateNormalTriL(loc=self.means[i], scale_tril=scale_tril).prob)
+        self.dtype = dtype
+
+    def sample(self, size):
+        """
+        Description:
+            samples from the multimodal distribtion
+        Args:
+            size: number of samples to be generated
+        Returns:
+             the generated samples
+        """
+        samples = np.zeros((size, self.dim))
+        idx = np.random.choice(self.num_modes, size=size, replace=True, p=self.weights)
+        for i in range(size):
+            samples[i, :] = np.random.multivariate_normal(mean=self.means[idx[i]], cov=self.cov, size=1)
+        return tf.convert_to_tensor(samples, dtype=self.dtype)
+
+    def __call__(self, x, y):
+        """
+        Description:
+            computes probability for given samples in tensorflow format
+        Args:
+            x: samples at which probability is to be computed
+        Returns:
+             the computed probabilities
+        """
+        probs = 0.0
+        x = tf.concat([x, y], axis=1)
+        for i in range(self.num_modes):
+            probs += self.weights[i] * self.tf_probs[i](x)
+        return tf.reshape(probs, (-1, 1))
+
+
+
 
 
 class ThirdSpaceTaylor():
