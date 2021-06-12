@@ -13,11 +13,11 @@ import tensorflow as tf
 import fps4_arch as fp
 import equation as eqn
 
-ens_file = 'data/evolution_gc8_1000.h5'
+ens_file = 'data/evolution_gc8_100.h5'
 dtype = tf.float64
 cov = 0.1 * np.identity(2) 
 pdf = eqn.GaussianCircle(cov, np.ones(8))
 domain = 2.0*np.array([[-1., 1.], [-1., 1.]])
-solver = fp.FPDGM(20, 2, eqn.ThirdSpaceTaylor, eqn.RadialSymmetry, ens_file, domain, pdf, dtype=dtype, name='FPDGM_2_20_type5_gc8')
+solver = fp.FPDGM(20, 2, eqn.ThirdSpaceTaylor, eqn.RadialSymmetry, ens_file, domain, pdf, dtype=dtype, name='FPDGM_2_20_type5_gc8_100')
 #solver.summary()
 solver.solve(2500, 0, 400)

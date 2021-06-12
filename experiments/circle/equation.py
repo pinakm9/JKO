@@ -1,7 +1,19 @@
+# add modules to Python's search path
+import sys
+from pathlib import Path
+from os.path import dirname, realpath
+script_dir = Path(dirname(realpath(__file__)))
+root = str(script_dir.parent.parent)
+print(root)
+sys.path.insert(0, root + '/modules')
+
+
+
 import tensorflow as tf
 import numpy as np
 import copy
 import tensorflow_probability as tfp
+import derivative as dr
 
 beta = 20.0
 
@@ -25,7 +37,7 @@ class Equation():
         f_yy = outer_y.gradient(f_y, y)
         a = (x*z - y) * f_x
         b = (y*z + x) * f_y
-        c = 4.0 * (z + 2.0) * f_x
+        c = 4.0 * (z + 2.0) * f
         d = (f_xx + f_yy) / beta
         return a + b + c + d - f_t
 
@@ -263,3 +275,32 @@ class RadialSymmetry():
             f_ = self.f(x, y)
         f_x, f_y = tape.gradient(f_, [x, y])
         return y*f_x - x*f_y
+
+
+
+class DiffOp():
+    def __init__(self, f):
+        #super().__init__(name='Equation', dtype=dtype)
+        self.f = f
+
+    #@tf.function
+    def __call__(self, x, y):
+        z = 4.0*(x*x + y*y - 1.0)
+        df = dr.Partial82(self.f)
+        f, df0, ddf0 = df(0, x, y)
+        _, df1, ddf1 = df(1, x, y)
+  
+        return x*z*df0 + y*z*df1 + 4.0*(z + 2.0)*f + (ddf0 + ddf1) / beta
+
+
+class Taylor2:
+    def __init__(self, f, h):
+        self.f = f
+        self.h = h
+    
+    @tf.function
+    def __call__(self, *args):
+        f_ = self.f(*args)
+        f_t = DiffOp(self.f)(*args)
+        f_tt = DiffOp(DiffOp(self.f))(*args)
+        return f_ + self.h**1 * f_t + self.h**2 * f_tt / 2.

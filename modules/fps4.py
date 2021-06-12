@@ -109,14 +109,14 @@ class FPSolver(tf.keras.models.Model):
         # generate data for training
         if self.current_time > 0:
             self.taylor.f = self.call
-            self.prev_target_values = self.call(*self.prev_ref_pts)#copy.deepcopy(self.target_values)
+            self.prev_target_values = self.call(*self.curr_ref_pts)#copy.deepcopy(self.target_values)
             self.target_values = self.taylor(*self.domain_pts)
            
         else:
             self.target_values = self.init_cond(*self.curr_ref_pts)#self.init_cond(*self.domain_pts)
             self.domain_pts = copy.deepcopy(self.curr_ref_pts)
             self.prev_ref_pts = copy.deepcopy(self.curr_ref_pts)
-            self.prev_target_values = self.call(*self.prev_ref_pts)
+            self.prev_target_values = self.call(*self.curr_ref_pts)
 
         hdf5_ens.close()
         """
@@ -203,10 +203,13 @@ class FPSolver(tf.keras.models.Model):
         Description:
             computes the Equality loss
         """
-        integ_correction = 0. if self.current_time ==0 else 0.001 * tf.math.square(tf.reduce_mean(self.call(*self.prev_ref_pts) / self.prev_target_values) - 1.0)
+        integ_correction = 0. if self.current_time ==0 else 0.001 * tf.math.square(tf.reduce_mean(self.prev_target_values/self.call(*self.curr_ref_pts)) - 1.0)
         return tf.reduce_mean(tf.math.square(self.call(*self.domain_pts) - self.target_values)) +\
                integ_correction #tf.reduce_mean(tf.math.square(self.correction(*self.curr_ref_pts))) +- 0.001*tf.reduce_mean(self.call(*self.curr_ref_pts))\
-               
+
+    def mean_loss(self):
+        pass
+
 
     def correct(self):
         if self.current_time % 5 == 4:

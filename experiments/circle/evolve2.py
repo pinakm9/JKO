@@ -40,7 +40,7 @@ def mu(t, X_t):
 def sigma(t, X_t):
     return s 
 
-steps = 1000
+steps = 100
 eqn = sde.SDE(2, mu, sigma, 'data/evolution_gc8_{}.h5'.format(steps), dtype=np_dtype)
 #eqn.extend(5.0)
 # evolve the ensemble and record the evolution2

@@ -21,7 +21,7 @@ class SDE:
         self.sigma = sigma
         self.record_path = record_path
 
-    def evolve(self, initial_ensemble, initial_probs, initial_first_partials, final_time, time_step):
+    def evolve(self, initial_ensembles, initial_probs, initial_first_partials, final_time, time_step):
         """
         Description:
             evolves an initial ensemble according to the SDE dynamics
@@ -32,39 +32,38 @@ class SDE:
             final_time: final time in the evolution assuming we're starting at time=0
             time_step: time_step in Euler-Maruyma method
         """
-        self.num_particles = len(initial_ensemble) 
+        self.num_particles = len(initial_ensembles[0]) 
         num_steps = int(final_time / time_step)
         noise_std = np.sqrt(time_step)
         hdf5 = tables.open_file(self.record_path, 'w')
-        ens_folder = hdf5.create_group(hdf5.root, 'ensemble')
-        #prob_folder = hdf5.create_group(hdf5.root, 'probabilities')
-        #hdf5.create_group(hdf5.root, 'first_partials')
-        new_ensemble = initial_ensemble#np.zeros((self.num_particles, self.space_dim))
-        # record the initial ensemble
-        hdf5.create_array(ens_folder, 'time_0', initial_ensemble)
-        #hdf5.create_array(prob_folder, 'time_0', initial_probs)
-        #for d in range(self.space_dim):
-        #    folder = hdf5.create_group(hdf5.root.first_partials, 'x_' + str(d))
-        #    hdf5.create_array(folder, 'time_0', initial_first_partials[d])
-        for step in range(num_steps):
+        for j, initial_ensemble in enumerate(initial_ensembles):
+            run_folder = hdf5.create_group(hdf5.root, 'run_{}'.format(j))
+            ens_folder = hdf5.create_group(run_folder, 'ensemble')
+            new_ensemble = initial_ensemble
+            # record the initial ensemble
+            hdf5.create_array(ens_folder, 'time_0', initial_ensemble)
             # evolve ensemble with Euler-Maruyama
-            noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
-            for i in range(self.num_particles):
-                new_ensemble[i] += self.mu(step*time_step, new_ensemble[i])*time_step + self.sigma(step*time_step, new_ensemble[i]) * noise
-            # record the new ensemble
-            hdf5.create_array(ens_folder, 'time_' + str(step + 1), new_ensemble)
+            for step in range(num_steps):
+            # evolve ensemble with Euler-Maruyama
+                for i in range(self.num_particles):
+                    noise = np.random.normal(loc=0.0, scale=noise_std, size=self.space_dim)
+                    new_ensemble[i] += self.mu(step*time_step, new_ensemble[i])*time_step + self.sigma(step*time_step, new_ensemble[i]) * noise
+                # record the new ensemble
+                hdf5.create_array(ens_folder, 'time_' + str(step + 1), new_ensemble)
         # add some extra useful information to the evolution file
         class Config(tables.IsDescription):
             num_steps = tables.Int32Col(pos=0)
             time_step = tables.Float32Col(pos=1)
             ensemble_size = tables.Int32Col(pos=2)
             dimension = tables.Int32Col(pos=3)
+            num_runs = tables.Int32Col(pos=4)
         tbl = hdf5.create_table(hdf5.root, 'config', Config)
         config = tbl.row
         config['num_steps'] = num_steps
         config['time_step'] = time_step
         config['ensemble_size'] = len(new_ensemble)
         config['dimension'] = new_ensemble.shape[-1]
+        config['num_runs'] = len(initial_ensembles)
         config.append()
         tbl.flush()
         hdf5.close()
@@ -100,7 +99,7 @@ class SDEPlotter:
         self.ens_file = ens_file
         self.fig_size = fig_size
         hdf5 = tables.open_file(ens_file, 'r')
-        self.num_frames, self.time_step, _, self.dim = hdf5.root.config.read()[0]
+        self.num_frames, self.time_step, _, self.dim, _ = hdf5.root.config.read()[0]
         self.num_frames += 1
         if self.dim == 2 or self.dim == 3:
             # create folder to store images
@@ -128,7 +127,7 @@ class SDEPlotter:
         def update_plot(frame):
             ax.clear()
             # read data to plot
-            ensemble = getattr(hdf5.root.ensemble, 'time_' + str(frame)).read()
+            ensemble = getattr(hdf5.root.run_0.ensemble, 'time_' + str(frame)).read()
             if self.dim == 2:
                 ax.scatter(ensemble[:, 0], ensemble[:, 1])
             else:
